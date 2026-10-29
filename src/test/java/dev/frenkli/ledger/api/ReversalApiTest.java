@@ -59,6 +59,11 @@ class ReversalApiTest extends AbstractApiTest {
         assertThat(statement.entries()).extracting(StatementResponse.Line::amount).containsExactly(-2_500L, 2_500L);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM entries WHERE transaction_id = ?", Integer.class,
                 transferId)).isEqualTo(2);
+        // The statement links the original to its reversal, so a client knows not to offer "reverse" again.
+        StatementResponse.Line reversalLine = statement.entries().get(0);
+        StatementResponse.Line originalLine = statement.entries().get(1);
+        assertThat(originalLine.reversedByTransactionId()).isEqualTo(reversalLine.transactionId());
+        assertThat(reversalLine.reversedByTransactionId()).isNull();
     }
 
     @Test

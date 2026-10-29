@@ -31,11 +31,11 @@ public class Instrument {
         // for JPA
     }
 
-    public Instrument(String symbol, String name, String currency) {
+    public Instrument(String symbol, String name, String currency, Instant createdAt) {
         this.symbol = symbol;
         this.name = name;
         this.currency = currency;
-        this.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS); // Postgres precision
+        this.createdAt = createdAt.truncatedTo(ChronoUnit.MICROS); // Postgres precision
     }
 
     public String getSymbol() {

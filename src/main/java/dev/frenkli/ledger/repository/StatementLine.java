@@ -11,5 +11,6 @@ public record StatementLine(
         TransactionType transactionType,
         String description,
         long amount,
-        Instant createdAt) {
+        Instant createdAt,
+        UUID reversedByTransactionId) {
 }

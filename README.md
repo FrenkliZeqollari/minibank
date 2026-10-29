@@ -1,7 +1,8 @@
-# ledger-core
+# Minibank (ledger-core)
 
-A double-entry bank ledger in Java 21 and Spring Boot 3. A learning/portfolio project, built the
-way a bank's backend team would: boring, correct, well-tested.
+An online bank built on a double-entry ledger: Java 21 and Spring Boot 3 on the backend, React and
+TypeScript on the frontend. A learning/portfolio project, built the way a bank's backend team
+would: boring, correct, well-tested.
 
 The full spec (domain rules, data model, API, milestones) lives in [`CLAUDE.md`](CLAUDE.md).
 The banking concepts behind each milestone are explained in [`docs/concepts.md`](docs/concepts.md).
@@ -19,6 +20,12 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 | 6. OpenAPI docs (springdoc) | done |
 | 6. Small frontend | done |
 | 6. Portfolio tracker | done |
+| 7. Modern React frontend + demo data | done |
+| 8. Customers & login | next |
+| 9. IBANs & sending money | planned |
+| 10. Standing orders & limits | planned |
+| 11. Back office (admin) | planned |
+| 12. Public deployment | planned |
 
 ## Concepts it demonstrates (so far)
 
@@ -44,8 +51,11 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
   `SECURITIES_SETTLEMENT` system account in the same DB transaction as the shares, no short
   selling under concurrency, cost basis and profit with the average cost method (no cent lost to
   rounding)
-- A small browser frontend that parses typed amounts into cents without floating point and
-  reuses the Idempotency-Key when retrying after a network error
+- A React + TypeScript banking app: dashboard with balance-over-time and money in/out charts,
+  payments with a review step, investments, market and ledger screens. Typed amounts become cents
+  without floating point; a retry after a network error reuses the Idempotency-Key
+- Time as a dependency (`Clock`) and business days in the bank's time zone (Europe/Berlin)
+- A `demo` profile that books six months of realistic history through the normal services
 - An API contract generated from the code (OpenAPI 3, Swagger UI), with tests that pin the
   parts clients rely on
 - RFC 7807 Problem Details errors: `404` unknown account, `422` broken business rule
@@ -56,9 +66,12 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 
 ## Tech stack
 
-Java 21, Spring Boot 3.5 (Web, Data JPA, Validation, Actuator), springdoc-openapi, PostgreSQL 16, Flyway,
-JUnit 5, AssertJ, Testcontainers, Maven (wrapper included), GitHub Actions. Frontend: plain HTML, CSS
-and JavaScript modules, no build step; its unit tests use Node's built-in test runner.
+- **Backend:** Java 21, Spring Boot 3.5 (Web, Data JPA, Validation, Actuator), springdoc-openapi,
+  PostgreSQL 16, Flyway
+- **Frontend:** React 19, TypeScript, Vite, TanStack Query, Recharts, React Router
+- **Tests:** JUnit 5, AssertJ, Testcontainers (real Postgres); Vitest and Testing Library
+- **Build:** Maven (wrapper included) builds the backend *and* the frontend (via
+  `frontend-maven-plugin`, which downloads its own Node), GitHub Actions
 
 ## How to run
 
@@ -71,11 +84,16 @@ Start the local Postgres:
 docker compose up -d
 ```
 
-Run the app (on port 8080):
+Run the app with the demo bank (on port 8080). On an empty database, the `demo` profile creates
+customers with six months of history: salaries, rent, groceries, savings, a reversed double
+charge, and a small portfolio with daily prices. The first start takes a minute longer, because
+Maven downloads Node and builds the frontend:
 
 ```bash
-./mvnw spring-boot:run
+SPRING_PROFILES_ACTIVE=demo ./mvnw spring-boot:run
 ```
+
+Without `SPRING_PROFILES_ACTIVE=demo` the bank starts empty.
 
 Check that it is up:
 
@@ -85,8 +103,8 @@ curl localhost:8080/actuator/health
 
 Expected response: `{"status":"UP"}`.
 
-Open the frontend in a browser: http://localhost:8080/ (open two accounts, deposit, transfer,
-reverse from the statement; add an instrument and a price under Market, then buy and sell shares).
+Open the bank in a browser: http://localhost:8080/ (in Codespaces: the **Ports** tab, port 8080,
+globe icon).
 
 Run the build with all tests (needs Docker; Testcontainers starts its own Postgres, the
 docker-compose one does not need to be running):
@@ -95,10 +113,18 @@ docker-compose one does not need to be running):
 ./mvnw verify
 ```
 
-Run the frontend's JavaScript unit tests (needs Node 22):
+That includes the frontend's tests. To work on the frontend with instant reload, keep the app
+running on 8080 and start Vite's dev server on port 5173 (needs Node 22), which forwards API calls
+to 8080:
 
 ```bash
-node --test "src/test/js/**/*.test.js"
+cd frontend && npm install && npm run dev
+```
+
+The frontend tests on their own:
+
+```bash
+cd frontend && npm test
 ```
 
 Stop the local Postgres and delete its data:
@@ -115,6 +141,8 @@ docker compose down -v
 | `DB_USERNAME` | `ledger` |
 | `DB_PASSWORD` | `ledger` |
 | `PORT` | `8080` |
+| `SPRING_PROFILES_ACTIVE` | unset; `demo` seeds example data into an empty database |
+| `LEDGER_BUSINESS_ZONE` | `Europe/Berlin` (which calendar day a booking belongs to) |
 
 The defaults match `docker-compose.yml` and are not secrets. Set real values through the
 environment anywhere else.
@@ -124,10 +152,10 @@ environment anywhere else.
 ```
 src/main/java/dev/frenkli/ledger      application code: api → service → repository, entities in domain
 src/main/resources/application.yml    configuration
-src/main/resources/static              the browser frontend (index.html, css/, js/)
+frontend/                             the React + TypeScript app (built into the jar by Maven)
 src/main/resources/db/migration       Flyway SQL migrations (V1__..., V2__...)
 src/test/java/dev/frenkli/ledger      tests; integration tests extend AbstractIntegrationTest
-src/test/js                           unit tests for the frontend's JavaScript
+frontend/src/**/*.test.ts(x)          frontend tests (Vitest)
 docs/concepts.md                      the banking "why" behind each milestone
 ```
 

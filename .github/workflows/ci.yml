@@ -17,14 +17,6 @@ jobs:
           cache: maven
 
       # Docker is preinstalled on ubuntu-latest, so Testcontainers can start Postgres.
+      # The Maven build also builds and tests the React frontend (with its own Node, see pom.xml).
       - name: Build and run all tests
         run: ./mvnw -B verify
-
-      # Unit tests for the frontend's JavaScript (money parsing/formatting). Node's built-in test
-      # runner, no npm packages needed.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Frontend unit tests
-        run: node --test "src/test/js/**/*.test.js"

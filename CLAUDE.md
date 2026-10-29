@@ -19,6 +19,9 @@ The owner wants to learn the banking concepts, not just get working code.
 - `docker-compose.yml` for local Postgres
 - GitHub Actions: build + all tests on every push and PR
 - Dev environment: GitHub Codespaces (`.devcontainer/devcontainer.json` already in repo)
+- Frontend (from Milestone 7): React + TypeScript (Vite) in `frontend/`, TanStack Query, Recharts,
+  Vitest + Testing Library. Built and tested by Maven via `frontend-maven-plugin` and served by
+  Spring Boot at `/`.
 - Package root: `dev.frenkli.ledger`
 
 ## Domain rules (never break these)
@@ -83,6 +86,21 @@ reversed.
 5. **Reversals:** mirror entries, reverse-once rule, link to original.
 6. *Later / optional:* multi-currency, OpenAPI docs (springdoc), small frontend, portfolio
    tracker on top.
+
+### Phase 2: a real online bank (one PR each, in this order)
+7. **Modern frontend + demo data:** React + TypeScript dashboard (accounts, payments with a
+   review step, investments, market, ledger), charts from new read endpoints (balance history,
+   monthly in/out, price history), a `demo` profile that seeds months of realistic history.
+8. **Customers & login:** registration and login (Spring Security, session cookie + CSRF), each
+   customer sees and moves only their own accounts (others' look like `404`), an admin role.
+   Deposits, reversals, instruments/prices and ledger details become admin-only.
+9. **IBANs & sending money:** every account gets a German-format IBAN (mod-97 checksum), transfers
+   to any IBAN, saved payees, payment reference text.
+10. **Standing orders & limits:** recurring payments run by a scheduler, daily transfer limits,
+    extra confirmation for large payments.
+11. **Back office:** admin screens for customers, freezing/closing accounts, customer approval
+    (KYC), an audit log of who did what, ledger health.
+12. **Public deployment:** Docker image, hosting with a managed Postgres, demo users.
 
 ## Conventions
 - Layers: `api` (controllers, DTOs) → `service` (business rules, `@Transactional`) →

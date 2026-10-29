@@ -18,6 +18,11 @@ spring:
 server:
   port: ${PORT:8080}
 
+ledger:
+  # The bank's business time zone: which calendar day or month a booking belongs to. Timestamps
+  # are stored in UTC; "the 1st of March" means the 1st of March here.
+  business-zone: ${LEDGER_BUSINESS_ZONE:Europe/Berlin}
+
 management:
   endpoints:
     web:

@@ -53,7 +53,11 @@ class OpenApiDocsTest extends AbstractIntegrationTest {
                 "GET /instruments",
                 "POST /instruments/{symbol}/prices",
                 "POST /accounts/{id}/trades",
-                "GET /accounts/{id}/portfolio");
+                "GET /accounts/{id}/portfolio",
+                "GET /accounts",
+                "GET /accounts/{id}/balance-history",
+                "GET /accounts/{id}/monthly-summary",
+                "GET /instruments/{symbol}/prices");
     }
 
     @Test

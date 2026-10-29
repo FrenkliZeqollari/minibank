@@ -23,9 +23,11 @@ public interface EntryRepository extends JpaRepository<Entry, UUID> {
      */
     @Query(value = """
             select new dev.frenkli.ledger.repository.StatementLine(
-                e.id, t.id, t.type, t.description, e.amount, e.createdAt)
-            from Entry e, LedgerTransaction t
-            where t.id = e.transactionId and e.accountId = :accountId
+                e.id, t.id, t.type, t.description, e.amount, e.createdAt, r.id)
+            from Entry e
+            join LedgerTransaction t on t.id = e.transactionId
+            left join LedgerTransaction r on r.reversesTransactionId = t.id
+            where e.accountId = :accountId
             order by e.createdAt desc, e.id desc
             """,
             countQuery = "select count(e) from Entry e where e.accountId = :accountId")
