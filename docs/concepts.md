@@ -444,3 +444,42 @@ A reversal needs an `Idempotency-Key` too. A retry with the same key returns the
 
 **Without all this.** Either history gets rewritten (no audit trail), or corrections can be
 applied twice or push customers into an overdraft.
+
+## Milestone 6: API documentation (OpenAPI)
+
+### The API is a contract
+
+**Problem.** Nobody uses a bank's ledger by reading its Java code. Mobile apps, partner banks and
+payment providers integrate against its *API*. They need to know exactly what to send and what
+comes back: that amounts are integer cents, that `Idempotency-Key` is mandatory, which errors
+can occur and what they mean. In banking, those integrations are often contractual. Written
+documentation that someone keeps up to date by hand drifts from the code within weeks.
+
+**How the code solves it.** springdoc generates an **OpenAPI 3** document from the code at
+runtime: `GET /v3/api-docs` (JSON) and an interactive **Swagger UI** at `/swagger-ui.html`, where
+you can try every endpoint in the browser. Most of it is derived automatically: paths, request
+and response records, required fields (from the Bean Validation annotations), headers, path and
+query parameters. The code only adds what cannot be guessed:
+
+- `@Operation` / `@ApiResponse` on the controllers: what an endpoint does and *which errors it can
+  return*, documented as `application/problem+json`.
+- `@Schema` on the DTO records: the money conventions (cents, signed entries, examples).
+- `OpenApiConfig`: the conventions that apply to the whole API, written once.
+- `ApiDocs.MoneyMovementResponses`: a *meta-annotation* bundling the `201` (with the
+  `Idempotent-Replayed` header), `400` and `404` responses shared by all money-moving endpoints,
+  so they are not copied three times.
+
+`OpenApiDocsTest` pins the parts clients depend on: every endpoint is documented (and nothing
+else, e.g. no internal Spring endpoints), money-moving `POST`s require `Idempotency-Key`, errors
+are Problem Details, and amounts are 64-bit integers described as cents. A refactoring that
+drops one of these from the docs fails the build.
+
+**Without it.** Each client team reverse-engineers the API from examples. Sooner or later
+someone sends `25.00` instead of `2500`, or retries without an idempotency key, and the mistake
+is about money.
+
+### A note for production
+
+The Swagger UI is handy during development. A real bank would usually not expose it on a public
+production server. It would publish the OpenAPI document to partners through a developer
+portal instead, and switch the UI off with `springdoc.swagger-ui.enabled=false`.
