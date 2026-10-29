@@ -306,7 +306,8 @@ get paid. If it retries blindly, Bob may get paid twice. Networks fail like this
 and mobile apps and payment providers retry automatically.
 
 **How the code solves it.** Every `POST /deposits` and `POST /transfers` must carry an
-`Idempotency-Key` header: a unique id the *client* picks for this one operation (usually a
+`Idempotency-Key` header (and so do the money-moving endpoints added later: reversals in
+Milestone 5 and securities trades in Milestone 6): a unique id the *client* picks for this one operation (usually a
 UUID) and sends again, unchanged, on every retry. The server stores the key with the
 transaction (`transactions.idempotency_key`, `UNIQUE`) and handles a repeated key like this
 (`IdempotencyService.findPrevious`):
