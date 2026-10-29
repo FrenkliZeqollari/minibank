@@ -222,3 +222,76 @@ treat as an error in their account.
 Every deposit now also updates `EXTERNAL_FUNDING`'s cached balance, so all deposits briefly lock
 that same row and run one after another. That is fine at this scale. Real banks avoid such a
 "hot" account, for example by splitting it into several sub-accounts or updating it in batches.
+
+## Milestone 3: Overdraft protection under concurrency
+
+### The race condition ("check-then-act")
+
+**Problem.** A transfer does two things: it *checks* the balance, then it *books* the money.
+When two requests for the same account arrive at the same moment, both can do their check
+before either has booked:
+
+| time | request 1 | request 2 |
+|---|---|---|
+| 1 | reads balance: 100 | |
+| 2 | | reads balance: 100 |
+| 3 | 80 ≤ 100, books −80 | |
+| 4 | | 80 ≤ 100, books −80 |
+| 5 | **balance: −60** | |
+
+Each check was correct when it ran, but the combination overdraws the account. This is not
+theory: before this milestone, `ConcurrentTransferTest` sent 50 transfers of €10.00 at once
+from an account holding €100.00, and **18 succeeded**, leaving the account at −€80.00.
+
+### Row locks
+
+**How the code solves it.** `MoneyMovementService.transfer` locks the account rows *before*
+reading the balance (`AccountRepository.findByIdForUpdate`, a `SELECT ... FOR UPDATE`). A
+second transaction that wants the same row waits at that line until the first one commits. Then
+it reads the balance *after* the first transfer, so its check is based on the real number. In
+the table above, request 2 would wait at time 2 and read 20 at time 5, and its transfer would be
+refused.
+
+On Postgres, Hibernate sends `FOR NO KEY UPDATE`, a slightly weaker variant of `FOR UPDATE`. It
+still blocks every other transaction that wants to lock or change the row, but it does not block
+inserting entries that merely *reference* the account. That is exactly what is needed here.
+
+Locks are released only at commit or rollback, so a transaction should hold them as briefly as
+possible: lock, check, book, commit.
+
+### Lock ordering prevents deadlocks
+
+**Problem.** Alice sends Bob money while Bob sends Alice money. If each transfer locked its
+"from" account first, transfer 1 would hold Alice and wait for Bob, while transfer 2 holds Bob
+and waits for Alice. Neither can continue: a deadlock. Postgres notices and kills one of them
+with an error, which the customer would see as a failed payment.
+
+**How the code solves it.** `MoneyMovementService.lockInIdOrder` always locks in ascending
+account-id order, no matter which account is "from" and which is "to". Whoever gets the first
+lock is guaranteed to also get the second. The balance updates in `LedgerService.record` use
+the same order. `ConcurrentTransferTest.transfersInBothDirectionsAtOnceDoNotDeadlock` sends 50
+transfers in both directions at once. With locking in request order instead, it fails with
+Postgres reporting `deadlock detected`.
+
+Deposits lock too (the customer account and `EXTERNAL_FUNDING`, in the same order), so every
+money movement follows one locking rule.
+
+### A database safety net for overdrafts
+
+`V3__no_customer_overdraft.sql` adds `CHECK (type = 'SYSTEM' OR balance >= 0)` to `accounts`.
+With the lock in place it should never fire. But if a future bug skipped the lock or the check,
+the database would refuse to commit a negative customer balance instead of quietly allowing it.
+The same layering as in Milestone 1: the service enforces the rule, the database double-checks.
+
+### How the test makes requests really overlap
+
+`ConcurrentTransferTest` starts 50 threads (`ExecutorService`). Each one waits at a
+`CountDownLatch` until all are ready, then they are released at once, so the requests hit the
+server together instead of one after another. While they run, a watcher thread keeps reading the
+account's committed balance and records the lowest value it ever sees, which must never be below
+0. Afterwards the test checks that exactly 10 transfers succeeded and 40 got `422`, that the
+money arrived, and that the whole ledger still sums to 0.
+
+**Without all this.** Customers could spend the same money twice by sending requests in parallel
+(a classic attack on payment systems), and payments would randomly fail with deadlocks under
+load.

@@ -7,7 +7,10 @@ import dev.frenkli.ledger.domain.Posting;
 import dev.frenkli.ledger.domain.SystemAccounts;
 import dev.frenkli.ledger.domain.TransactionType;
 import dev.frenkli.ledger.repository.AccountRepository;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +35,8 @@ public class MoneyMovementService {
     public RecordedTransaction deposit(UUID accountId, long amount, String currency, String description) {
         requirePositive(amount);
         Currencies.requireSupported(currency);
-        Account account = loadUsableCustomerAccount(accountId);
+        Map<UUID, Account> locked = lockInIdOrder(SystemAccounts.EXTERNAL_FUNDING_ID, accountId);
+        Account account = requireUsableCustomerAccount(locked.get(accountId));
         requireSameCurrency(account, currency);
 
         return ledger.record(TransactionType.DEPOSIT, description, List.of(
@@ -50,13 +54,16 @@ public class MoneyMovementService {
                     "Cannot transfer from an account to itself");
         }
         Currencies.requireSupported(currency);
-        Account from = loadUsableCustomerAccount(fromAccountId);
-        Account to = loadUsableCustomerAccount(toAccountId);
+        // Lock both accounts BEFORE reading the balance. Without the lock, two transfers could
+        // both read a balance of 100, both decide that 80 is affordable, and both book it.
+        Map<UUID, Account> locked = lockInIdOrder(fromAccountId, toAccountId);
+        Account from = requireUsableCustomerAccount(locked.get(fromAccountId));
+        Account to = requireUsableCustomerAccount(locked.get(toAccountId));
         requireSameCurrency(from, currency);
         requireSameCurrency(to, currency);
 
-        // No overdrafts for customer accounts. NOTE: not yet safe when two transfers from the
-        // same account run at the same time; Milestone 3 adds row locking for that.
+        // No overdrafts for customer accounts. Safe under concurrency: we hold the lock on
+        // 'from', so no other transaction can change its balance until we commit.
         long balance = from.getBalance();
         if (balance < amount) {
             throw new BusinessRuleException(BusinessRule.INSUFFICIENT_FUNDS,
@@ -77,13 +84,26 @@ public class MoneyMovementService {
         }
     }
 
-    private Account loadUsableCustomerAccount(UUID accountId) {
-        Account account = accounts.findById(accountId)
-                .orElseThrow(() -> new AccountNotFoundException(accountId));
+    /**
+     * Locks the accounts' rows one by one, always in ascending id order, whatever order the
+     * request names them in. If one transfer locked A then B while another locked B then A, each
+     * could end up holding one lock and waiting forever for the other (a deadlock). With one
+     * global order, whoever gets the first lock also gets the second.
+     *
+     * <p>Must use the same order as the balance updates in {@link LedgerService#record}.
+     */
+    private Map<UUID, Account> lockInIdOrder(UUID... accountIds) {
+        Map<UUID, Account> locked = new HashMap<>();
+        Arrays.stream(accountIds).sorted().forEach(id -> locked.put(id,
+                accounts.findByIdForUpdate(id).orElseThrow(() -> new AccountNotFoundException(id))));
+        return locked;
+    }
+
+    private static Account requireUsableCustomerAccount(Account account) {
         // System accounts are moved only by the bank's own bookings, never through this API.
         if (account.getType() != AccountType.CUSTOMER || account.getStatus() != AccountStatus.ACTIVE) {
             throw new BusinessRuleException(BusinessRule.ACCOUNT_NOT_USABLE,
-                    "Account " + accountId + " is not an active customer account");
+                    "Account " + account.getId() + " is not an active customer account");
         }
         return account;
     }

@@ -104,6 +104,31 @@ class LedgerDatabaseRulesTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void customerBalanceCannotGoNegative() {
+        UUID customer = insertCustomerAccount();
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE accounts SET balance = -1 WHERE id = ?", customer))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("accounts_customer_no_overdraft");
+    }
+
+    @Test
+    void systemAccountMayGoNegative() {
+        UUID customer = insertCustomerAccount();
+        UUID transactionId = UUID.randomUUID();
+
+        tx.executeWithoutResult(status -> {
+            insertTransaction(transactionId);
+            insertEntry(transactionId, SystemAccounts.EXTERNAL_FUNDING_ID, -1_000);
+            insertEntry(transactionId, customer, 1_000);
+        });
+
+        Long fundingBalance = jdbc.queryForObject("SELECT balance FROM accounts WHERE id = ?",
+                Long.class, SystemAccounts.EXTERNAL_FUNDING_ID);
+        assertThat(fundingBalance).isNegative();
+    }
+
+    @Test
     void externalFundingSystemAccountIsSeeded() {
         String type = jdbc.queryForObject("SELECT type FROM accounts WHERE id = ? AND owner_name = 'EXTERNAL_FUNDING'",
                 String.class, SystemAccounts.EXTERNAL_FUNDING_ID);

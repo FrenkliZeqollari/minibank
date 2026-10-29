@@ -13,8 +13,8 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 | 0. Setup: Spring Boot skeleton, Postgres, Flyway, Testcontainers, CI | done |
 | 1. Accounts + double-entry core | done |
 | 2. Balances & statements | done |
-| 3. Overdraft protection under concurrency | next |
-| 4. Idempotency | |
+| 3. Overdraft protection under concurrency | done |
+| 4. Idempotency | next |
 | 5. Reversals | |
 
 ## Concepts it demonstrates (so far)
@@ -28,6 +28,9 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 - A cached balance per account that always equals the sum of its entries: updated in the same
   database transaction, with an atomic `balance = balance + x`, in a fixed lock order
 - Reconciliation: `/ledger/health` checks that all entries sum to 0 and every cache matches
+- No overdrafts under concurrency: account rows are locked (`SELECT ... FOR UPDATE`) before the
+  balance check, always in account-id order so parallel transfers cannot deadlock; a database
+  `CHECK` refuses negative customer balances as a safety net
 - Account statements with stable paging (newest first, unique tie-breaker)
 - RFC 7807 Problem Details errors: `404` unknown account, `422` broken business rule
 - Schema changes as versioned, reviewed SQL migrations (Flyway), never Hibernate `ddl-auto`
