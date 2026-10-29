@@ -1,0 +1,25 @@
+# All settings can be overridden with environment variables. The defaults below only work
+# against the local docker-compose Postgres and are not secrets.
+spring:
+  application:
+    name: ledger-core
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ledger}
+    username: ${DB_USERNAME:ledger}
+    password: ${DB_PASSWORD:ledger}
+  jpa:
+    # Flyway owns the schema. Hibernate only checks that entities match it, it never changes it.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    locations: classpath:db/migration
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
