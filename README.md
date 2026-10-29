@@ -30,7 +30,8 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 - Append-only history: the database rejects updates and deletes of entries and transactions
 - A cached balance per account that always equals the sum of its entries: updated in the same
   database transaction, with an atomic `balance = balance + x`, in a fixed lock order
-- Reconciliation: `/ledger/health` checks that all entries sum to 0 and every cache matches
+- Reconciliation: `/ledger/health` checks that all entries sum to 0 and every cache matches,
+  and answers `503` when they do not, so monitoring can alert on it
 - No overdrafts under concurrency: account rows are locked (`SELECT ... FOR UPDATE`) before the
   balance check, always in account-id order so parallel transfers cannot deadlock; a database
   `CHECK` refuses negative customer balances as a safety net
@@ -209,6 +210,13 @@ curl -s localhost:8080/ledger/health
 
 ```json
 {"healthy":true,"sumOfAllEntries":0,"balanceMismatches":[]}
+```
+
+That is `200`. If the books do not balance, the answer is `503 Service Unavailable`, so monitoring
+can alert on the status code alone, and the body lists what is wrong:
+
+```json
+{"healthy":false,"sumOfAllEntries":0,"balanceMismatches":[{"accountId":"…","cachedBalance":1,"entriesSum":0}]}
 ```
 
 Reverse a transaction (the transfer's `id` from above). This books its mirror image as a new
