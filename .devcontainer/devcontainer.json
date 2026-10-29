@@ -1,6 +1,9 @@
 {
   "name": "Ledger Core",
-  "image": "mcr.microsoft.com/devcontainers/java:1-21-bookworm",
+  // Java 21 image with one fix applied, see Dockerfile.
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
 
   "features": {
     "ghcr.io/devcontainers/features/java:1": {
