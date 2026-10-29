@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ledger-core</title>
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <h1>ledger-core</h1>
+  <span id="health" class="badge" title="GET /ledger/health">checking books…</span>
+  <a class="docs-link" href="swagger-ui.html">API docs</a>
+</header>
+
+<main class="layout">
+  <section class="panel" aria-labelledby="accounts-title">
+    <h2 id="accounts-title">Accounts</h2>
+    <p class="hint">Accounts you open or add here are remembered in this browser.</p>
+    <ul id="account-list" class="account-list"></ul>
+
+    <form id="open-account-form" class="stack">
+      <label>Owner name <input name="ownerName" required maxlength="255" placeholder="e.g. Alice"></label>
+      <button type="submit">Open EUR account</button>
+    </form>
+
+    <form id="add-account-form" class="stack">
+      <label>Add an existing account by id <input name="accountId" required placeholder="account id (UUID)"></label>
+      <button type="submit" class="secondary">Add</button>
+    </form>
+  </section>
+
+  <section class="panel" id="detail" aria-live="polite">
+    <p id="no-selection" class="empty">Open or select an account.</p>
+
+    <div id="account-detail" hidden>
+      <div class="account-head">
+        <div>
+          <h2 id="detail-owner"></h2>
+          <code id="detail-id" class="muted"></code>
+        </div>
+        <div class="balance">
+          <span class="muted">Balance</span>
+          <strong id="detail-balance"></strong>
+        </div>
+      </div>
+
+      <div class="forms">
+        <form id="deposit-form" class="card stack">
+          <h3>Deposit</h3>
+          <label>Amount (EUR) <input name="amount" inputmode="decimal" required placeholder="e.g. 100.00"></label>
+          <label>Description <input name="description" maxlength="255" placeholder="optional, e.g. Salary"></label>
+          <button type="submit">Deposit</button>
+          <p class="result" role="status"></p>
+        </form>
+
+        <form id="transfer-form" class="card stack">
+          <h3>Transfer</h3>
+          <label>To
+            <select name="toAccountId" required></select>
+          </label>
+          <label>Amount (EUR) <input name="amount" inputmode="decimal" required placeholder="e.g. 25.00"></label>
+          <label>Description <input name="description" maxlength="255" placeholder="optional, e.g. Rent"></label>
+          <button type="submit">Transfer</button>
+          <p class="result" role="status"></p>
+        </form>
+      </div>
+
+      <h3>Statement</h3>
+      <div class="table-wrap">
+      <table class="statement">
+        <thead>
+        <tr><th>Date</th><th>Type</th><th>Description</th><th class="num">Amount</th><th></th></tr>
+        </thead>
+        <tbody id="statement-rows"></tbody>
+      </table>
+      </div>
+      <div class="pager">
+        <button id="prev-page" class="secondary" type="button">Newer</button>
+        <span id="page-info" class="muted"></span>
+        <button id="next-page" class="secondary" type="button">Older</button>
+      </div>
+      <p id="statement-result" class="result" role="status"></p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

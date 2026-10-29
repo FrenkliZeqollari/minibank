@@ -17,6 +17,7 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 | 4. Idempotency | done |
 | 5. Reversals | done |
 | 6. OpenAPI docs (springdoc) | done |
+| 6. Small frontend | done |
 
 ## Concepts it demonstrates (so far)
 
@@ -37,6 +38,8 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 - Corrections without erasing history: a reversal books the mirror image of a transaction,
   at most once (`409` on a second attempt), never overdrawing the customer
 - Account statements with stable paging (newest first, unique tie-breaker)
+- A small browser frontend that parses typed amounts into cents without floating point and
+  reuses the Idempotency-Key when retrying after a network error
 - An API contract generated from the code (OpenAPI 3, Swagger UI), with tests that pin the
   parts clients rely on
 - RFC 7807 Problem Details errors: `404` unknown account, `422` broken business rule
@@ -48,7 +51,8 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 ## Tech stack
 
 Java 21, Spring Boot 3.5 (Web, Data JPA, Validation, Actuator), springdoc-openapi, PostgreSQL 16, Flyway,
-JUnit 5, AssertJ, Testcontainers, Maven (wrapper included), GitHub Actions.
+JUnit 5, AssertJ, Testcontainers, Maven (wrapper included), GitHub Actions. Frontend: plain HTML, CSS
+and JavaScript modules, no build step; its unit tests use Node's built-in test runner.
 
 ## How to run
 
@@ -75,11 +79,20 @@ curl localhost:8080/actuator/health
 
 Expected response: `{"status":"UP"}`.
 
+Open the frontend in a browser: http://localhost:8080/ (open two accounts, deposit, transfer,
+reverse from the statement).
+
 Run the build with all tests (needs Docker; Testcontainers starts its own Postgres, the
 docker-compose one does not need to be running):
 
 ```bash
 ./mvnw verify
+```
+
+Run the frontend's JavaScript unit tests (needs Node 22):
+
+```bash
+node --test "src/test/js/**/*.test.js"
 ```
 
 Stop the local Postgres and delete its data:
@@ -105,8 +118,10 @@ environment anywhere else.
 ```
 src/main/java/dev/frenkli/ledger      application code: api → service → repository, entities in domain
 src/main/resources/application.yml    configuration
+src/main/resources/static              the browser frontend (index.html, css/, js/)
 src/main/resources/db/migration       Flyway SQL migrations (V1__..., V2__...)
 src/test/java/dev/frenkli/ledger      tests; integration tests extend AbstractIntegrationTest
+src/test/js                           unit tests for the frontend's JavaScript
 docs/concepts.md                      the banking "why" behind each milestone
 ```
 
