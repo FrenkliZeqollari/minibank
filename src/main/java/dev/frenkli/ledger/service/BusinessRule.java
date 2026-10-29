@@ -8,7 +8,8 @@ public enum BusinessRule {
     SAME_ACCOUNT_TRANSFER("Transfer to the same account"),
     INSUFFICIENT_FUNDS("Insufficient funds"),
     ACCOUNT_NOT_USABLE("Account cannot be used"),
-    IDEMPOTENCY_KEY_REUSED("Idempotency-Key reused for a different request");
+    IDEMPOTENCY_KEY_REUSED("Idempotency-Key reused for a different request"),
+    REVERSAL_NOT_REVERSIBLE("A reversal cannot be reversed");
 
     private final String title;
 

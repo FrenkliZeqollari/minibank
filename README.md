@@ -15,7 +15,7 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 | 2. Balances & statements | done |
 | 3. Overdraft protection under concurrency | done |
 | 4. Idempotency | done |
-| 5. Reversals | next |
+| 5. Reversals | done |
 
 ## Concepts it demonstrates (so far)
 
@@ -33,6 +33,8 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
   `CHECK` refuses negative customer balances as a safety net
 - Idempotency: money-moving POSTs need an `Idempotency-Key`; a retry returns the original
   result without booking again, even when the duplicates arrive in parallel
+- Corrections without erasing history: a reversal books the mirror image of a transaction,
+  at most once (`409` on a second attempt), never overdrawing the customer
 - Account statements with stable paging (newest first, unique tie-breaker)
 - RFC 7807 Problem Details errors: `404` unknown account, `422` broken business rule
 - Schema changes as versioned, reviewed SQL migrations (Flyway), never Hibernate `ddl-auto`
@@ -177,8 +179,26 @@ curl -s localhost:8080/ledger/health
 {"healthy":true,"sumOfAllEntries":0,"balanceMismatches":[]}
 ```
 
-A transfer larger than the balance is refused with `422`:
+Reverse a transaction (the transfer's `id` from above). This books its mirror image as a new
+`REVERSAL` transaction; the original stays in the history:
+
+```bash
+curl -s -X POST localhost:8080/transactions/<transfer-id>/reversal \
+  -H 'Idempotency-Key: 3e8a1f6c-7b2d-4c9e-a5f0-1d6b8c2e4a73'
+```
 
 ```json
-{"type":"urn:problem:ledger:insufficient-funds","title":"Insufficient funds","status":422,"detail":"Account … has 7500 cents, transfer needs 9000","instance":"/transfers"}
+{"id":"…","type":"REVERSAL","description":"Reversal of transaction <transfer-id>","reversesTransactionId":"<transfer-id>","createdAt":"…","entries":[{"accountId":"<bob-id>","amount":-2500},{"accountId":"<alice-id>","amount":2500}]}
+```
+
+A transaction can be reversed only once; a second attempt (with a new key) gets `409`:
+
+```json
+{"type":"urn:problem:ledger:already-reversed","title":"Already reversed","status":409,"detail":"Transaction <transfer-id> has already been reversed","instance":"/transactions/<transfer-id>/reversal"}
+```
+
+A transfer larger than the balance is refused with `422` (here €900.00 from Alice's €100.00):
+
+```json
+{"type":"urn:problem:ledger:insufficient-funds","title":"Insufficient funds","status":422,"detail":"Account <alice-id> has 10000 cents, transfer needs 90000","instance":"/transfers"}
 ```

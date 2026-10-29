@@ -6,9 +6,6 @@ import dev.frenkli.ledger.domain.AccountType;
 import dev.frenkli.ledger.domain.Posting;
 import dev.frenkli.ledger.domain.SystemAccounts;
 import dev.frenkli.ledger.domain.TransactionType;
-import dev.frenkli.ledger.repository.AccountRepository;
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -20,12 +17,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MoneyMovementService {
 
-    private final AccountRepository accounts;
+    private final AccountLocks accountLocks;
     private final LedgerService ledger;
     private final IdempotencyService idempotency;
 
-    public MoneyMovementService(AccountRepository accounts, LedgerService ledger, IdempotencyService idempotency) {
-        this.accounts = accounts;
+    public MoneyMovementService(AccountLocks accountLocks, LedgerService ledger, IdempotencyService idempotency) {
+        this.accountLocks = accountLocks;
         this.ledger = ledger;
         this.idempotency = idempotency;
     }
@@ -45,7 +42,7 @@ public class MoneyMovementService {
 
         requirePositive(amount);
         Currencies.requireSupported(currency);
-        Map<UUID, Account> locked = lockInIdOrder(SystemAccounts.EXTERNAL_FUNDING_ID, accountId);
+        Map<UUID, Account> locked = accountLocks.lockInIdOrder(List.of(SystemAccounts.EXTERNAL_FUNDING_ID, accountId));
         Account account = requireUsableCustomerAccount(locked.get(accountId));
         requireSameCurrency(account, currency);
 
@@ -73,7 +70,7 @@ public class MoneyMovementService {
         Currencies.requireSupported(currency);
         // Lock both accounts BEFORE reading the balance. Without the lock, two transfers could
         // both read a balance of 100, both decide that 80 is affordable, and both book it.
-        Map<UUID, Account> locked = lockInIdOrder(fromAccountId, toAccountId);
+        Map<UUID, Account> locked = accountLocks.lockInIdOrder(List.of(fromAccountId, toAccountId));
         Account from = requireUsableCustomerAccount(locked.get(fromAccountId));
         Account to = requireUsableCustomerAccount(locked.get(toAccountId));
         requireSameCurrency(from, currency);
@@ -99,21 +96,6 @@ public class MoneyMovementService {
             throw new BusinessRuleException(BusinessRule.NON_POSITIVE_AMOUNT,
                     "Amount must be greater than 0 cents, got " + amount);
         }
-    }
-
-    /**
-     * Locks the accounts' rows one by one, always in ascending id order, whatever order the
-     * request names them in. If one transfer locked A then B while another locked B then A, each
-     * could end up holding one lock and waiting forever for the other (a deadlock). With one
-     * global order, whoever gets the first lock also gets the second.
-     *
-     * <p>Must use the same order as the balance updates in {@link LedgerService#record}.
-     */
-    private Map<UUID, Account> lockInIdOrder(UUID... accountIds) {
-        Map<UUID, Account> locked = new HashMap<>();
-        Arrays.stream(accountIds).sorted().forEach(id -> locked.put(id,
-                accounts.findByIdForUpdate(id).orElseThrow(() -> new AccountNotFoundException(id))));
-        return locked;
     }
 
     private static Account requireUsableCustomerAccount(Account account) {

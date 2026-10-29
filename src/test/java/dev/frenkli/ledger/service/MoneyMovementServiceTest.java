@@ -21,7 +21,7 @@ class MoneyMovementServiceTest {
     private final AccountRepository accounts = mock(AccountRepository.class);
     private final LedgerService ledger = mock(LedgerService.class);
     private final IdempotencyService idempotency = mock(IdempotencyService.class); // returns Optional.empty()
-    private final MoneyMovementService service = new MoneyMovementService(accounts, ledger, idempotency);
+    private final MoneyMovementService service = new MoneyMovementService(new AccountLocks(accounts), ledger, idempotency);
 
     private final UUID from = UUID.randomUUID();
     private final UUID to = UUID.randomUUID();
