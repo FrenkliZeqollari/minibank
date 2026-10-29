@@ -200,6 +200,13 @@ ledger look broken. The total is returned as a `BigDecimal` (Postgres sums `BIGI
 
 `LedgerHealthApiTest` corrupts one cached balance on purpose and checks that it is reported.
 
+**Status code (added after Milestone 6).** The endpoint answers `200` when the books balance and
+`503 Service Unavailable` when they do not, with the same JSON body explaining what is wrong.
+A check nobody looks at is useless. Monitoring systems, load balancers and uptime checkers react
+to status codes without reading the body, so `503` turns a broken ledger into an alert instead
+of a `200` that says "everything is fine" at first glance. The frontend's badge reads the code
+too: `503` means "the books do not balance"; no answer at all means "unreachable".
+
 **Without it.** A broken ledger would be noticed only when a customer complains.
 
 ### Statements and stable paging

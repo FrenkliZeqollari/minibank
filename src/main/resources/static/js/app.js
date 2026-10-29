@@ -252,11 +252,13 @@ async function renderPortfolio() {
 async function renderHealth() {
   const badge = $('#health');
   try {
-    const health = await api.ledgerHealth();
-    badge.textContent = health.healthy ? 'Books balance' : 'Books do NOT balance';
-    badge.className = `badge ${health.healthy ? 'ok' : 'bad'}`;
-  } catch {
-    badge.textContent = 'Ledger unreachable';
+    await api.ledgerHealth(); // 200: the books balance
+    badge.textContent = 'Books balance';
+    badge.className = 'badge ok';
+  } catch (e) {
+    // 503 is a real answer: the server is up, but the books do not balance (details in the body).
+    const unbalanced = e instanceof ApiError && e.status === 503;
+    badge.textContent = unbalanced ? 'Books do NOT balance' : 'Ledger unreachable';
     badge.className = 'badge bad';
   }
 }
