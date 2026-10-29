@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import dev.frenkli.ledger.domain.LedgerTransaction;
 import dev.frenkli.ledger.domain.TransactionType;
 import dev.frenkli.ledger.service.RecordedTransaction;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -14,12 +15,17 @@ public record TransactionResponse(
         TransactionType type,
         String description,
         // Only present on a REVERSAL; left out of the JSON otherwise.
+        @Schema(description = "Only on a REVERSAL: the transaction it cancels")
         @JsonInclude(JsonInclude.Include.NON_NULL) UUID reversesTransactionId,
         Instant createdAt,
+        @Schema(description = "Always at least 2; their amounts sum to 0")
         List<EntryResponse> entries) {
 
     /** One entry: signed amount in cents; positive = into the account, negative = out of it. */
-    public record EntryResponse(UUID accountId, long amount) {
+    public record EntryResponse(
+            UUID accountId,
+            @Schema(description = "Signed cents: positive = into the account, negative = out of it", example = "-2500")
+            long amount) {
     }
 
     static TransactionResponse from(RecordedTransaction recorded) {

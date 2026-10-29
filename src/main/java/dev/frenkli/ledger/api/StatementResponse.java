@@ -2,6 +2,7 @@ package dev.frenkli.ledger.api;
 
 import dev.frenkli.ledger.domain.TransactionType;
 import dev.frenkli.ledger.repository.StatementLine;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -17,11 +18,13 @@ public record StatementResponse(
         int totalPages) {
 
     /** {@code amount} is signed cents: positive = money in, negative = money out. */
+    @Schema(name = "StatementLine")
     public record Line(
             UUID entryId,
             UUID transactionId,
             TransactionType transactionType,
             String description,
+            @Schema(description = "Signed cents: positive = money in, negative = money out", example = "-2500")
             long amount,
             Instant createdAt) {
     }

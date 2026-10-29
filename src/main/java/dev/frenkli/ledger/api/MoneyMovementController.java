@@ -3,11 +3,18 @@ package dev.frenkli.ledger.api;
 import dev.frenkli.ledger.service.MoneyMovementService;
 import dev.frenkli.ledger.service.MovementResult;
 import dev.frenkli.ledger.service.ReversalService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
  * client-chosen unique id for the operation, sent again unchanged when the client retries.
  */
 @RestController
+@Tag(name = "Money movements", description = "Deposits, transfers and reversals. All require an Idempotency-Key.")
 public class MoneyMovementController {
 
     static final String IDEMPOTENCY_KEY = "Idempotency-Key";
@@ -35,7 +43,15 @@ public class MoneyMovementController {
     }
 
     @PostMapping("/deposits")
+    @Operation(summary = "Deposit money into a customer account",
+            description = "Money enters the bank: booked as EXTERNAL_FUNDING −amount / customer +amount.")
+    @ApiDocs.MoneyMovementResponses
+    @ApiResponse(responseCode = "422",
+            description = "Business rule broken: amount ≤ 0, unsupported currency, currency mismatch, target is not "
+                    + "an active customer account, or Idempotency-Key reused for a different request.",
+            content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
     public ResponseEntity<TransactionResponse> deposit(
+            @Parameter(description = ApiDocs.IDEMPOTENCY_KEY_DESCRIPTION, example = ApiDocs.IDEMPOTENCY_KEY_EXAMPLE)
             @RequestHeader(IDEMPOTENCY_KEY) @NotBlank @Size(max = 255) String idempotencyKey,
             @Valid @RequestBody DepositRequest request) {
         return created(moneyMovementService.deposit(idempotencyKey,
@@ -43,7 +59,17 @@ public class MoneyMovementController {
     }
 
     @PostMapping("/transfers")
+    @Operation(summary = "Transfer money between two customer accounts",
+            description = "Booked as from −amount / to +amount. Never overdraws the sending account, even under "
+                    + "concurrent requests.")
+    @ApiDocs.MoneyMovementResponses
+    @ApiResponse(responseCode = "422",
+            description = "Business rule broken: insufficient funds, amount ≤ 0, transfer to the same account, "
+                    + "unsupported currency, currency mismatch, an account that is not an active customer account, "
+                    + "or Idempotency-Key reused for a different request.",
+            content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
     public ResponseEntity<TransactionResponse> transfer(
+            @Parameter(description = ApiDocs.IDEMPOTENCY_KEY_DESCRIPTION, example = ApiDocs.IDEMPOTENCY_KEY_EXAMPLE)
             @RequestHeader(IDEMPOTENCY_KEY) @NotBlank @Size(max = 255) String idempotencyKey,
             @Valid @RequestBody TransferRequest request) {
         return created(moneyMovementService.transfer(idempotencyKey,
@@ -53,9 +79,20 @@ public class MoneyMovementController {
 
     /** Cancels a transaction by booking its mirror image. A transaction can be reversed once (409). */
     @PostMapping("/transactions/{id}/reversal")
+    @Operation(summary = "Reverse a transaction",
+            description = "Books a new REVERSAL transaction whose entries mirror the original with opposite signs. "
+                    + "The original stays in the history. A transaction can be reversed once.")
+    @ApiDocs.MoneyMovementResponses
+    @ApiResponse(responseCode = "409", description = "The transaction has already been reversed.",
+            content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "422",
+            description = "The transaction is itself a reversal, a customer no longer has the money to give back, "
+                    + "or Idempotency-Key reused for a different request.",
+            content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
     public ResponseEntity<TransactionResponse> reverse(
+            @Parameter(description = ApiDocs.IDEMPOTENCY_KEY_DESCRIPTION, example = ApiDocs.IDEMPOTENCY_KEY_EXAMPLE)
             @RequestHeader(IDEMPOTENCY_KEY) @NotBlank @Size(max = 255) String idempotencyKey,
-            @PathVariable UUID id) {
+            @Parameter(description = "Id of the transaction to reverse") @PathVariable UUID id) {
         return created(reversalService.reverse(idempotencyKey, id));
     }
 

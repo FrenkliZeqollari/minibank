@@ -1,6 +1,7 @@
 package dev.frenkli.ledger.api;
 
 import dev.frenkli.ledger.service.LedgerHealth;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -11,9 +12,12 @@ import java.util.UUID;
  */
 public record LedgerHealthResponse(
         boolean healthy,
+        @Schema(description = "Sum of every entry in the ledger, in cents. Must be 0.", example = "0")
         BigDecimal sumOfAllEntries,
+        @Schema(description = "Accounts whose cached balance differs from the sum of their entries. Must be empty.")
         List<Mismatch> balanceMismatches) {
 
+    @Schema(name = "BalanceMismatch")
     public record Mismatch(UUID accountId, long cachedBalance, long entriesSum) {
     }
 

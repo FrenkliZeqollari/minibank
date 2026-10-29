@@ -16,6 +16,7 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 | 3. Overdraft protection under concurrency | done |
 | 4. Idempotency | done |
 | 5. Reversals | done |
+| 6. OpenAPI docs (springdoc) | done |
 
 ## Concepts it demonstrates (so far)
 
@@ -36,6 +37,8 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 - Corrections without erasing history: a reversal books the mirror image of a transaction,
   at most once (`409` on a second attempt), never overdrawing the customer
 - Account statements with stable paging (newest first, unique tie-breaker)
+- An API contract generated from the code (OpenAPI 3, Swagger UI), with tests that pin the
+  parts clients rely on
 - RFC 7807 Problem Details errors: `404` unknown account, `422` broken business rule
 - Schema changes as versioned, reviewed SQL migrations (Flyway), never Hibernate `ddl-auto`
 - Integration tests against a real PostgreSQL 16 (Testcontainers), not an in-memory imitation
@@ -44,7 +47,7 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 
 ## Tech stack
 
-Java 21, Spring Boot 3.5 (Web, Data JPA, Validation, Actuator), PostgreSQL 16, Flyway,
+Java 21, Spring Boot 3.5 (Web, Data JPA, Validation, Actuator), springdoc-openapi, PostgreSQL 16, Flyway,
 JUnit 5, AssertJ, Testcontainers, Maven (wrapper included), GitHub Actions.
 
 ## How to run
@@ -106,6 +109,13 @@ src/main/resources/db/migration       Flyway SQL migrations (V1__..., V2__...)
 src/test/java/dev/frenkli/ledger      tests; integration tests extend AbstractIntegrationTest
 docs/concepts.md                      the banking "why" behind each milestone
 ```
+
+## API documentation
+
+With the app running:
+
+- Swagger UI (try every endpoint in the browser): http://localhost:8080/swagger-ui.html
+- OpenAPI 3 document (JSON): http://localhost:8080/v3/api-docs
 
 ## API examples
 
