@@ -16,10 +16,10 @@ class StatementApiTest extends AbstractApiTest {
     void statementListsEntriesNewestFirst() {
         UUID alice = createAccount("Alice");
         UUID bob = createAccount("Bob");
-        rest.postForEntity("/deposits",
+        postWithNewKey("/deposits",
                 Map.of("accountId", alice, "amount", 10_000, "currency", "EUR", "description", "Salary"),
                 String.class);
-        rest.postForEntity("/transfers",
+        postWithNewKey("/transfers",
                 Map.of("fromAccountId", alice, "toAccountId", bob, "amount", 2_500, "currency", "EUR",
                         "description", "Rent"),
                 String.class);

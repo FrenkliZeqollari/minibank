@@ -14,8 +14,8 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 | 1. Accounts + double-entry core | done |
 | 2. Balances & statements | done |
 | 3. Overdraft protection under concurrency | done |
-| 4. Idempotency | next |
-| 5. Reversals | |
+| 4. Idempotency | done |
+| 5. Reversals | next |
 
 ## Concepts it demonstrates (so far)
 
@@ -31,6 +31,8 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 - No overdrafts under concurrency: account rows are locked (`SELECT ... FOR UPDATE`) before the
   balance check, always in account-id order so parallel transfers cannot deadlock; a database
   `CHECK` refuses negative customer balances as a safety net
+- Idempotency: money-moving POSTs need an `Idempotency-Key`; a retry returns the original
+  result without booking again, even when the duplicates arrive in parallel
 - Account statements with stable paging (newest first, unique tie-breaker)
 - RFC 7807 Problem Details errors: `404` unknown account, `422` broken business rule
 - Schema changes as versioned, reviewed SQL migrations (Flyway), never Hibernate `ddl-auto`
@@ -107,6 +109,9 @@ docs/concepts.md                      the banking "why" behind each milestone
 
 Amounts are integers in cents: `10000` is €100.00. Only `EUR` is supported for now.
 
+`POST /deposits` and `POST /transfers` require an `Idempotency-Key` header: a unique id you pick
+for the operation (e.g. `uuidgen`) and send again unchanged if you retry it.
+
 Open an account:
 
 ```bash
@@ -122,6 +127,7 @@ Deposit €100.00 (booked as `EXTERNAL_FUNDING -10000 / Alice +10000`):
 
 ```bash
 curl -s -X POST localhost:8080/deposits -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: 6c4f3c2e-1b7d-4a55-9a51-0d7e1f2b8a10' \
   -d '{"accountId": "<alice-id>", "amount": 10000, "currency": "EUR", "description": "Salary"}'
 ```
 
@@ -129,11 +135,20 @@ Transfer €25.00 to Bob:
 
 ```bash
 curl -s -X POST localhost:8080/transfers -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: 9b2d7e41-5f0a-4c3e-8d6b-2a1f4e7c9d30' \
   -d '{"fromAccountId": "<alice-id>", "toAccountId": "<bob-id>", "amount": 2500, "currency": "EUR", "description": "Rent"}'
 ```
 
 ```json
 {"id":"…","type":"TRANSFER","description":"Rent","createdAt":"…","entries":[{"accountId":"<alice-id>","amount":-2500},{"accountId":"<bob-id>","amount":2500}]}
+```
+
+Sending exactly the same transfer again with the same key books nothing new: you get the same
+`201` and body back, with the header `Idempotent-Replayed: true`. The same key with a different
+body is refused:
+
+```json
+{"type":"urn:problem:ledger:idempotency-key-reused","title":"Idempotency-Key reused for a different request","status":422,"detail":"Idempotency-Key '9b2d7e41-5f0a-4c3e-8d6b-2a1f4e7c9d30' was already used for a different request","instance":"/transfers"}
 ```
 
 Get an account and its balance:

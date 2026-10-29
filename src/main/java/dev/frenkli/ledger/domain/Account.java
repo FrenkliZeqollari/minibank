@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -59,7 +60,7 @@ public class Account {
         account.currency = currency;
         account.balance = 0;
         account.status = AccountStatus.ACTIVE;
-        account.createdAt = Instant.now();
+        account.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS); // Postgres precision
         return account;
     }
 

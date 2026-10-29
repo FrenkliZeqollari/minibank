@@ -129,6 +129,38 @@ class LedgerDatabaseRulesTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void newTransactionWithoutIdempotencyKeyIsRejected() {
+        UUID customer = insertCustomerAccount();
+        UUID transactionId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            jdbc.update("INSERT INTO transactions (id, type, created_at) VALUES (?, 'DEPOSIT', now())", transactionId);
+            insertEntry(transactionId, SystemAccounts.EXTERNAL_FUNDING_ID, -100);
+            insertEntry(transactionId, customer, 100);
+        })).isInstanceOf(DataAccessException.class).hasMessageContaining("transactions_idempotency_required");
+    }
+
+    @Test
+    void idempotencyKeyIsUnique() {
+        UUID customer = insertCustomerAccount();
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        tx.executeWithoutResult(status -> {
+            jdbc.update("INSERT INTO transactions (id, type, idempotency_key, request_hash, created_at) "
+                    + "VALUES (?, 'DEPOSIT', 'same-key-' || ?, 'h', now())", first, customer.toString());
+            insertEntry(first, SystemAccounts.EXTERNAL_FUNDING_ID, -100);
+            insertEntry(first, customer, 100);
+        });
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            jdbc.update("INSERT INTO transactions (id, type, idempotency_key, request_hash, created_at) "
+                    + "VALUES (?, 'DEPOSIT', 'same-key-' || ?, 'h', now())", second, customer.toString());
+            insertEntry(second, SystemAccounts.EXTERNAL_FUNDING_ID, -100);
+            insertEntry(second, customer, 100);
+        })).isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
     void externalFundingSystemAccountIsSeeded() {
         String type = jdbc.queryForObject("SELECT type FROM accounts WHERE id = ? AND owner_name = 'EXTERNAL_FUNDING'",
                 String.class, SystemAccounts.EXTERNAL_FUNDING_ID);
@@ -144,7 +176,8 @@ class LedgerDatabaseRulesTest extends AbstractIntegrationTest {
     }
 
     private void insertTransaction(UUID id) {
-        jdbc.update("INSERT INTO transactions (id, type, created_at) VALUES (?, 'DEPOSIT', now())", id);
+        jdbc.update("INSERT INTO transactions (id, type, idempotency_key, request_hash, created_at) "
+                + "VALUES (?, 'DEPOSIT', ?, 'test-hash', now())", id, "test-" + id);
     }
 
     /** Like the application does: write the entry and update the cached balance together. */

@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,10 +22,12 @@ public class MoneyMovementService {
 
     private final AccountRepository accounts;
     private final LedgerService ledger;
+    private final IdempotencyService idempotency;
 
-    public MoneyMovementService(AccountRepository accounts, LedgerService ledger) {
+    public MoneyMovementService(AccountRepository accounts, LedgerService ledger, IdempotencyService idempotency) {
         this.accounts = accounts;
         this.ledger = ledger;
+        this.idempotency = idempotency;
     }
 
     /**
@@ -32,22 +35,36 @@ public class MoneyMovementService {
      * goes negative, so the ledger as a whole still sums to 0.
      */
     @Transactional
-    public RecordedTransaction deposit(UUID accountId, long amount, String currency, String description) {
+    public MovementResult deposit(String idempotencyKey, UUID accountId, long amount, String currency,
+                                  String description) {
+        String requestHash = RequestFingerprint.of("DEPOSIT", accountId, amount, currency, description);
+        Optional<RecordedTransaction> previous = idempotency.findPrevious(idempotencyKey, requestHash);
+        if (previous.isPresent()) {
+            return new MovementResult(previous.get(), true);
+        }
+
         requirePositive(amount);
         Currencies.requireSupported(currency);
         Map<UUID, Account> locked = lockInIdOrder(SystemAccounts.EXTERNAL_FUNDING_ID, accountId);
         Account account = requireUsableCustomerAccount(locked.get(accountId));
         requireSameCurrency(account, currency);
 
-        return ledger.record(TransactionType.DEPOSIT, description, List.of(
-                new Posting(SystemAccounts.EXTERNAL_FUNDING_ID, -amount),
-                new Posting(account.getId(), amount)));
+        return new MovementResult(ledger.record(TransactionType.DEPOSIT, description, idempotencyKey, requestHash,
+                List.of(new Posting(SystemAccounts.EXTERNAL_FUNDING_ID, -amount),
+                        new Posting(account.getId(), amount))), false);
     }
 
     /** Money moves between two customer accounts: from -amount / to +amount. */
     @Transactional
-    public RecordedTransaction transfer(UUID fromAccountId, UUID toAccountId, long amount,
-                                        String currency, String description) {
+    public MovementResult transfer(String idempotencyKey, UUID fromAccountId, UUID toAccountId, long amount,
+                                   String currency, String description) {
+        String requestHash = RequestFingerprint.of("TRANSFER", fromAccountId, toAccountId, amount, currency,
+                description);
+        Optional<RecordedTransaction> previous = idempotency.findPrevious(idempotencyKey, requestHash);
+        if (previous.isPresent()) {
+            return new MovementResult(previous.get(), true);
+        }
+
         requirePositive(amount);
         if (fromAccountId.equals(toAccountId)) {
             throw new BusinessRuleException(BusinessRule.SAME_ACCOUNT_TRANSFER,
@@ -70,9 +87,9 @@ public class MoneyMovementService {
                     "Account " + from.getId() + " has " + balance + " cents, transfer needs " + amount);
         }
 
-        return ledger.record(TransactionType.TRANSFER, description, List.of(
-                new Posting(from.getId(), -amount),
-                new Posting(to.getId(), amount)));
+        return new MovementResult(ledger.record(TransactionType.TRANSFER, description, idempotencyKey, requestHash,
+                List.of(new Posting(from.getId(), -amount),
+                        new Posting(to.getId(), amount))), false);
     }
 
     private static void requirePositive(long amount) {

@@ -27,12 +27,12 @@ class CachedBalanceTest extends AbstractApiTest {
             UUID b = accounts.get(random.nextInt(accounts.size()));
             long amount = 1 + random.nextInt(5_000);
             if (random.nextInt(3) == 0) {
-                rest.postForEntity("/deposits",
+                postWithNewKey("/deposits",
                         Map.of("accountId", a, "amount", amount, "currency", "EUR"), String.class);
             } else {
                 // Deliberately includes transfers that fail (same account, insufficient funds):
                 // a rejected transfer must leave no trace in either the entries or the cache.
-                rest.postForEntity("/transfers",
+                postWithNewKey("/transfers",
                         Map.of("fromAccountId", a, "toAccountId", b, "amount", amount, "currency", "EUR"),
                         String.class);
             }

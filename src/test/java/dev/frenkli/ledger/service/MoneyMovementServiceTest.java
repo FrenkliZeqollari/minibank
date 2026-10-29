@@ -20,7 +20,8 @@ class MoneyMovementServiceTest {
 
     private final AccountRepository accounts = mock(AccountRepository.class);
     private final LedgerService ledger = mock(LedgerService.class);
-    private final MoneyMovementService service = new MoneyMovementService(accounts, ledger);
+    private final IdempotencyService idempotency = mock(IdempotencyService.class); // returns Optional.empty()
+    private final MoneyMovementService service = new MoneyMovementService(accounts, ledger, idempotency);
 
     private final UUID from = UUID.randomUUID();
     private final UUID to = UUID.randomUUID();
@@ -28,32 +29,32 @@ class MoneyMovementServiceTest {
     @ParameterizedTest
     @ValueSource(longs = {0, -1, -10_000})
     void depositRejectsNonPositiveAmounts(long amount) {
-        assertRuleBroken(() -> service.deposit(to, amount, "EUR", null), BusinessRule.NON_POSITIVE_AMOUNT);
+        assertRuleBroken(() -> service.deposit("key", to, amount, "EUR", null), BusinessRule.NON_POSITIVE_AMOUNT);
     }
 
     @ParameterizedTest
     @ValueSource(longs = {0, -1})
     void transferRejectsNonPositiveAmounts(long amount) {
-        assertRuleBroken(() -> service.transfer(from, to, amount, "EUR", null), BusinessRule.NON_POSITIVE_AMOUNT);
+        assertRuleBroken(() -> service.transfer("key", from, to, amount, "EUR", null), BusinessRule.NON_POSITIVE_AMOUNT);
     }
 
     @Test
     void transferRejectsSameAccount() {
-        assertRuleBroken(() -> service.transfer(from, from, 100, "EUR", null), BusinessRule.SAME_ACCOUNT_TRANSFER);
+        assertRuleBroken(() -> service.transfer("key", from, from, 100, "EUR", null), BusinessRule.SAME_ACCOUNT_TRANSFER);
     }
 
     @Test
     void depositRejectsUnsupportedCurrency() {
-        assertRuleBroken(() -> service.deposit(to, 100, "USD", null), BusinessRule.UNSUPPORTED_CURRENCY);
+        assertRuleBroken(() -> service.deposit("key", to, 100, "USD", null), BusinessRule.UNSUPPORTED_CURRENCY);
     }
 
     @Test
     void transferRejectsUnknownAccount() {
         when(accounts.findByIdForUpdate(any())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.transfer(from, to, 100, "EUR", null))
+        assertThatThrownBy(() -> service.transfer("key", from, to, 100, "EUR", null))
                 .isInstanceOf(AccountNotFoundException.class);
-        verify(ledger, never()).record(any(), any(), any());
+        verify(ledger, never()).record(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -62,13 +63,13 @@ class MoneyMovementServiceTest {
         when(accounts.findByIdForUpdate(from)).thenReturn(Optional.of(Account.openCustomerAccount("A", "EUR")));
         when(accounts.findByIdForUpdate(to)).thenReturn(Optional.of(Account.openCustomerAccount("B", "EUR")));
 
-        assertRuleBroken(() -> service.transfer(from, to, 100, "EUR", null), BusinessRule.INSUFFICIENT_FUNDS);
+        assertRuleBroken(() -> service.transfer("key", from, to, 100, "EUR", null), BusinessRule.INSUFFICIENT_FUNDS);
     }
 
     private void assertRuleBroken(Runnable call, BusinessRule rule) {
         assertThatThrownBy(call::run)
                 .isInstanceOfSatisfying(BusinessRuleException.class,
                         e -> org.assertj.core.api.Assertions.assertThat(e.getRule()).isEqualTo(rule));
-        verify(ledger, never()).record(any(), any(), any());
+        verify(ledger, never()).record(any(), any(), any(), any(), any());
     }
 }

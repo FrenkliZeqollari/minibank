@@ -7,7 +7,8 @@ public enum BusinessRule {
     CURRENCY_MISMATCH("Currency mismatch"),
     SAME_ACCOUNT_TRANSFER("Transfer to the same account"),
     INSUFFICIENT_FUNDS("Insufficient funds"),
-    ACCOUNT_NOT_USABLE("Account cannot be used");
+    ACCOUNT_NOT_USABLE("Account cannot be used"),
+    IDEMPOTENCY_KEY_REUSED("Idempotency-Key reused for a different request");
 
     private final String title;
 

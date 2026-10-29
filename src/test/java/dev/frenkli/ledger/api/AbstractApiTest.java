@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,6 +25,18 @@ abstract class AbstractApiTest extends AbstractIntegrationTest {
     @Autowired
     JdbcTemplate jdbc;
 
+    /** POSTs with the given Idempotency-Key header. */
+    <T> ResponseEntity<T> postWithKey(String path, Object body, String idempotencyKey, Class<T> responseType) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Idempotency-Key", idempotencyKey);
+        return rest.postForEntity(path, new HttpEntity<>(body, headers), responseType);
+    }
+
+    /** POSTs as a brand-new operation: a fresh, never used Idempotency-Key. */
+    <T> ResponseEntity<T> postWithNewKey(String path, Object body, Class<T> responseType) {
+        return postWithKey(path, body, UUID.randomUUID().toString(), responseType);
+    }
+
     UUID createAccount(String ownerName) {
         ResponseEntity<AccountResponse> response = rest.postForEntity("/accounts",
                 Map.of("ownerName", ownerName, "currency", "EUR"), AccountResponse.class);
@@ -31,13 +45,13 @@ abstract class AbstractApiTest extends AbstractIntegrationTest {
     }
 
     void deposit(UUID accountId, long amount) {
-        ResponseEntity<String> response = rest.postForEntity("/deposits",
+        ResponseEntity<String> response = postWithNewKey("/deposits",
                 Map.of("accountId", accountId, "amount", amount, "currency", "EUR"), String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     }
 
     void transfer(UUID from, UUID to, long amount) {
-        ResponseEntity<String> response = rest.postForEntity("/transfers",
+        ResponseEntity<String> response = postWithNewKey("/transfers",
                 Map.of("fromAccountId", from, "toAccountId", to, "amount", amount, "currency", "EUR"), String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     }
