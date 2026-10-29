@@ -56,6 +56,32 @@ abstract class AbstractApiTest extends AbstractIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     }
 
+    /** Creates an EUR instrument with a fresh, unique symbol and the given price; returns the symbol. */
+    String createInstrument(long priceInCents) {
+        String symbol = "T" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        ResponseEntity<String> created = rest.postForEntity("/instruments",
+                Map.of("symbol", symbol, "name", "Test " + symbol, "currency", "EUR"), String.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        setPrice(symbol, priceInCents);
+        return symbol;
+    }
+
+    void setPrice(String symbol, long priceInCents) {
+        ResponseEntity<String> response = rest.postForEntity("/instruments/" + symbol + "/prices",
+                Map.of("price", priceInCents), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+    }
+
+    /** Places a trade with a fresh Idempotency-Key. */
+    <T> ResponseEntity<T> trade(UUID accountId, String side, String symbol, long quantity, Class<T> responseType) {
+        return postWithNewKey("/accounts/" + accountId + "/trades",
+                Map.of("side", side, "symbol", symbol, "quantity", quantity), responseType);
+    }
+
+    PortfolioResponse portfolioOf(UUID accountId) {
+        return rest.getForObject("/accounts/" + accountId + "/portfolio", PortfolioResponse.class);
+    }
+
     /** The cached balance, as the API returns it. */
     long balanceOf(UUID accountId) {
         return rest.getForObject("/accounts/" + accountId, AccountResponse.class).balance();

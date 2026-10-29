@@ -48,12 +48,17 @@ class OpenApiDocsTest extends AbstractIntegrationTest {
                 "POST /deposits",
                 "POST /transfers",
                 "POST /transactions/{id}/reversal",
-                "GET /ledger/health");
+                "GET /ledger/health",
+                "POST /instruments",
+                "GET /instruments",
+                "POST /instruments/{symbol}/prices",
+                "POST /accounts/{id}/trades",
+                "GET /accounts/{id}/portfolio");
     }
 
     @Test
     void moneyMovingEndpointsRequireTheIdempotencyKeyHeader() {
-        for (String path : List.of("/deposits", "/transfers", "/transactions/{id}/reversal")) {
+        for (String path : List.of("/deposits", "/transfers", "/transactions/{id}/reversal", "/accounts/{id}/trades")) {
             JsonNode post = spec.at("/paths/" + escape(path) + "/post");
             JsonNode header = findParameter(post, "Idempotency-Key");
 

@@ -1,7 +1,7 @@
 // Run with: node --test "src/test/js/**/*.test.js"
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCents, parseAmountToCents } from '../../main/resources/static/js/money.js';
+import { formatCents, parseAmountToCents, parseShareQuantity } from '../../main/resources/static/js/money.js';
 
 test('parses whole and decimal amounts into cents', () => {
   assert.equal(parseAmountToCents('25'), 2500);
@@ -42,4 +42,12 @@ test('formats cents for display', () => {
 
 test('refuses to format a non-integer', () => {
   assert.throws(() => formatCents(25.5));
+});
+
+test('parses whole share quantities', () => {
+  assert.equal(parseShareQuantity('10'), 10);
+  assert.equal(parseShareQuantity(' 1 '), 1);
+  for (const bad of ['', '0', '-1', '1.5', '1,5', 'ten', '1e2']) {
+    assert.throws(() => parseShareQuantity(bad), Error, `should reject "${bad}"`);
+  }
 });

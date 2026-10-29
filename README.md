@@ -18,6 +18,7 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 | 5. Reversals | done |
 | 6. OpenAPI docs (springdoc) | done |
 | 6. Small frontend | done |
+| 6. Portfolio tracker | done |
 
 ## Concepts it demonstrates (so far)
 
@@ -38,6 +39,10 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 - Corrections without erasing history: a reversal books the mirror image of a transaction,
   at most once (`409` on a second attempt), never overdrawing the customer
 - Account statements with stable paging (newest first, unique tie-breaker)
+- A securities portfolio on top of the ledger: buying and selling move cash through a
+  `SECURITIES_SETTLEMENT` system account in the same DB transaction as the shares, no short
+  selling under concurrency, cost basis and profit with the average cost method (no cent lost to
+  rounding)
 - A small browser frontend that parses typed amounts into cents without floating point and
   reuses the Idempotency-Key when retrying after a network error
 - An API contract generated from the code (OpenAPI 3, Swagger UI), with tests that pin the
@@ -80,7 +85,7 @@ curl localhost:8080/actuator/health
 Expected response: `{"status":"UP"}`.
 
 Open the frontend in a browser: http://localhost:8080/ (open two accounts, deposit, transfer,
-reverse from the statement).
+reverse from the statement; add an instrument and a price under Market, then buy and sell shares).
 
 Run the build with all tests (needs Docker; Testcontainers starts its own Postgres, the
 docker-compose one does not need to be running):
@@ -221,6 +226,45 @@ A transaction can be reversed only once; a second attempt (with a new key) gets 
 ```json
 {"type":"urn:problem:ledger:already-reversed","title":"Already reversed","status":409,"detail":"Transaction <transfer-id> has already been reversed","instance":"/transactions/<transfer-id>/reversal"}
 ```
+
+### Portfolio
+
+Create an instrument and record its market price (cents per share; prices are entered by hand):
+
+```bash
+curl -s -X POST localhost:8080/instruments -H 'Content-Type: application/json' \
+  -d '{"symbol": "ACME", "name": "ACME Corp.", "currency": "EUR"}'
+```
+
+```bash
+curl -s -X POST localhost:8080/instruments/ACME/prices -H 'Content-Type: application/json' \
+  -d '{"price": 1234}'
+```
+
+For an account `<investor-id>` with €1,000.00 deposited, buy 10 shares at the current price. Like every money movement this needs an `Idempotency-Key`;
+the cash side is a `TRADE` transaction against the `SECURITIES_SETTLEMENT` system account:
+
+```bash
+curl -s -X POST localhost:8080/accounts/<investor-id>/trades -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: 5d1f9a7e-2c4b-4e8a-9f3d-7b6a1c0e2d48' \
+  -d '{"side": "BUY", "symbol": "ACME", "quantity": 10}'
+```
+
+```json
+{"id":"…","accountId":"<investor-id>","symbol":"ACME","side":"BUY","quantity":10,"price":1234,"grossAmount":12340,"transactionId":"…","createdAt":"…"}
+```
+
+After the price rose to 15.00 and 4 shares were sold, the portfolio (all amounts in cents):
+
+```bash
+curl -s localhost:8080/accounts/<investor-id>/portfolio
+```
+
+```json
+{"accountId":"<investor-id>","currency":"EUR","cash":93660,"positions":[{"symbol":"ACME","name":"ACME Corp.","quantity":6,"costBasis":7404,"lastPrice":1500,"priceAsOf":"…","marketValue":9000,"unrealizedPnl":1596,"realizedPnl":1064}],"marketValue":9000,"costBasis":7404,"unrealizedPnl":1596,"realizedPnl":1064,"totalValue":102660}
+```
+
+### Errors
 
 A transfer larger than the balance is refused with `422` (here €900.00 from Alice's €100.00):
 

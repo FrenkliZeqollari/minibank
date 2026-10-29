@@ -64,6 +64,7 @@ export class MoneyOperation {
     try {
       const result = await request('POST', path, { body, headers: { 'Idempotency-Key': this.#key } });
       this.#key = null; // definite answer: done
+      // 'transaction' is the response body: a transaction, or a trade for /trades.
       return { transaction: result.data, replayed: result.headers.get('Idempotent-Replayed') === 'true' };
     } catch (e) {
       if (!(e instanceof NetworkError)) {
@@ -80,4 +81,10 @@ export const api = {
   getStatement: (id, page, size) =>
     request('GET', `/accounts/${encodeURIComponent(id)}/entries?page=${page}&size=${size}`).then(r => r.data),
   ledgerHealth: () => request('GET', '/ledger/health').then(r => r.data),
+  listInstruments: () => request('GET', '/instruments').then(r => r.data),
+  createInstrument: (symbol, name) =>
+    request('POST', '/instruments', { body: { symbol, name, currency: 'EUR' } }).then(r => r.data),
+  recordPrice: (symbol, price) =>
+    request('POST', `/instruments/${encodeURIComponent(symbol)}/prices`, { body: { price } }).then(r => r.data),
+  getPortfolio: (id) => request('GET', `/accounts/${encodeURIComponent(id)}/portfolio`).then(r => r.data),
 };

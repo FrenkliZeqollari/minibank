@@ -1,5 +1,5 @@
 import { api, ApiError, MoneyOperation, NetworkError } from './api.js';
-import { formatCents, parseAmountToCents } from './money.js';
+import { formatCents, parseAmountToCents, parseShareQuantity } from './money.js';
 
 // There is no "list all accounts" endpoint (a bank would never hand every account to a browser),
 // so the page remembers the ids of accounts opened or added here, in this browser only.
@@ -8,6 +8,7 @@ const PAGE_SIZE = 10;
 
 const state = {
   accounts: new Map(), // id -> account from the API
+  instruments: [],     // from GET /instruments, with their current prices
   selectedId: null,
   page: 0,
 };
@@ -45,6 +46,23 @@ function describe(error) {
 function showResult(element, message, ok) {
   element.textContent = message;
   element.className = `result ${ok ? 'ok' : 'error'}`;
+}
+
+/** Gains with an explicit sign: "+12.00 EUR" / "−3.00 EUR". */
+function signed(cents) {
+  return cents > 0 ? `+${formatCents(cents)}` : formatCents(cents);
+}
+
+function gainClass(cents) {
+  return cents > 0 ? 'in' : cents < 0 ? 'out' : '';
+}
+
+/** A table cell with text and an optional CSS class. */
+function cell(text, className = '') {
+  const td = document.createElement('td');
+  td.textContent = text;
+  td.className = className;
+  return td;
 }
 
 function label(account) {
@@ -125,7 +143,8 @@ async function renderStatement() {
     tr.append(amount);
 
     const action = document.createElement('td');
-    if (line.transactionType !== 'REVERSAL') {
+    // Reversals cannot be reversed, and trades are undone by trading back, not by a reversal.
+    if (line.transactionType !== 'REVERSAL' && line.transactionType !== 'TRADE') {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'secondary';
@@ -152,6 +171,84 @@ async function renderStatement() {
   $('#next-page').disabled = state.page + 1 >= pages;
 }
 
+async function renderMarket() {
+  state.instruments = await api.listInstruments();
+  const list = $('#instrument-list');
+  list.replaceChildren();
+  for (const instrument of state.instruments) {
+    const item = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = `${instrument.symbol} · ${instrument.name}`;
+    const price = document.createElement('span');
+    price.className = 'price';
+    price.textContent = instrument.lastPrice == null ? 'no price' : formatCents(instrument.lastPrice, instrument.currency);
+    item.append(name, price);
+    list.append(item);
+  }
+  if (state.instruments.length === 0) {
+    const item = document.createElement('li');
+    item.className = 'muted';
+    item.textContent = 'No instruments yet.';
+    list.append(item);
+  }
+  for (const select of document.querySelectorAll('#price-form select[name="symbol"], #trade-form select[name="symbol"]')) {
+    const previous = select.value;
+    select.replaceChildren(...state.instruments.map(i => new Option(i.symbol, i.symbol)));
+    if (state.instruments.some(i => i.symbol === previous)) {
+      select.value = previous;
+    }
+  }
+}
+
+async function renderPortfolio() {
+  const id = state.selectedId;
+  if (!id) {
+    return;
+  }
+  const portfolio = await api.getPortfolio(id);
+  const summary = $('#portfolio-summary');
+  summary.replaceChildren();
+  const figures = [
+    ['Cash', formatCents(portfolio.cash), ''],
+    ['Investments', formatCents(portfolio.marketValue), ''],
+    ['Total', formatCents(portfolio.totalValue), ''],
+    ['Unrealized gain/loss', signed(portfolio.unrealizedPnl), gainClass(portfolio.unrealizedPnl)],
+    ['Realized gain/loss', signed(portfolio.realizedPnl), gainClass(portfolio.realizedPnl)],
+  ];
+  for (const [term, value, className] of figures) {
+    const box = document.createElement('div');
+    const dt = document.createElement('dt');
+    dt.textContent = term;
+    const dd = document.createElement('dd');
+    dd.textContent = value;
+    dd.className = className;
+    box.append(dt, dd);
+    summary.append(box);
+  }
+
+  const rows = $('#position-rows');
+  rows.replaceChildren();
+  for (const p of portfolio.positions) {
+    const tr = document.createElement('tr');
+    tr.append(
+      cell(p.symbol),
+      cell(String(p.quantity), 'num'),
+      cell(formatCents(p.costBasis), 'num'),
+      cell(formatCents(p.lastPrice), 'num'),
+      cell(formatCents(p.marketValue), 'num'),
+      cell(signed(p.unrealizedPnl), `num ${gainClass(p.unrealizedPnl)}`),
+    );
+    rows.append(tr);
+  }
+  if (portfolio.positions.length === 0) {
+    const tr = document.createElement('tr');
+    const td = cell('No shares held.', 'muted');
+    td.colSpan = 6;
+    tr.append(td);
+    rows.append(tr);
+  }
+}
+
 async function renderHealth() {
   const badge = $('#health');
   try {
@@ -173,7 +270,12 @@ async function refresh(...ids) {
   }
   renderAccountList();
   renderDetail();
-  await Promise.all([renderStatement(), renderHealth()]);
+  await Promise.all([renderStatement(), renderPortfolio(), renderMarket(), renderHealth()]);
+}
+
+/** The accounts whose balance a response changed: a transaction's entries, or a trade's account. */
+function affectedAccounts(body) {
+  return body.entries ? body.entries.map(e => e.accountId) : [body.accountId];
 }
 
 async function select(id) {
@@ -196,7 +298,7 @@ async function addAccount(id) {
  * Wires a money-moving form to one MoneyOperation. Editing any field turns it into a different
  * operation, so the pending Idempotency-Key is dropped.
  */
-function moneyForm(form, buildRequest) {
+function moneyForm(form, buildRequest, describeSuccess = () => 'Booked.') {
   const operation = new MoneyOperation();
   const result = form.querySelector('.result');
   form.addEventListener('input', () => operation.reset());
@@ -215,8 +317,9 @@ function moneyForm(form, buildRequest) {
       const { transaction, replayed } = await operation.send(request.path, request.body);
       form.reset();
       // Reload balances first, so the confirmation never appears next to an outdated balance.
-      await refresh(...transaction.entries.map(e => e.accountId));
-      showResult(result, replayed ? 'Already booked earlier (replayed, nothing booked twice).' : 'Booked.', true);
+      await refresh(...affectedAccounts(transaction));
+      showResult(result,
+        replayed ? 'Already booked earlier (replayed, nothing booked twice).' : describeSuccess(transaction), true);
     } catch (e) {
       showResult(result, describe(e), false);
     } finally {
@@ -233,7 +336,7 @@ async function reverse(transactionId, button) {
   button.disabled = true;
   try {
     const { transaction } = await new MoneyOperation().send(`/transactions/${transactionId}/reversal`, undefined);
-    await refresh(...transaction.entries.map(e => e.accountId));
+    await refresh(...affectedAccounts(transaction));
     showResult(result, 'Reversed.', true);
   } catch (e) {
     showResult(result, describe(e), false);
@@ -296,6 +399,47 @@ function wireUp() {
     };
   });
 
+  moneyForm($('#trade-form'), (data) => {
+    if (!data.get('symbol')) {
+      throw new Error('Add an instrument in the Market panel first.');
+    }
+    return {
+      path: `/accounts/${state.selectedId}/trades`,
+      body: { side: data.get('side'), symbol: data.get('symbol'), quantity: parseShareQuantity(data.get('quantity')) },
+    };
+  }, (trade) => `Done: ${trade.side} ${trade.quantity} ${trade.symbol} at ${formatCents(trade.price)}, `
+    + `${formatCents(trade.grossAmount)} in total.`);
+
+  $('#add-instrument-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const result = form.querySelector('.result');
+    const data = new FormData(form);
+    try {
+      const instrument = await api.createInstrument(data.get('symbol').trim(), data.get('name').trim());
+      form.reset();
+      await renderMarket();
+      showResult(result, `Added ${instrument.symbol}. Set a price before trading it.`, true);
+    } catch (e) {
+      showResult(result, describe(e), false);
+    }
+  });
+
+  $('#price-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const result = form.querySelector('.result');
+    const data = new FormData(form);
+    try {
+      const price = await api.recordPrice(data.get('symbol'), parseAmountToCents(data.get('price')));
+      form.querySelector('input[name="price"]').value = '';
+      await refresh();
+      showResult(result, `${price.symbol} is now ${formatCents(price.price)}.`, true);
+    } catch (e) {
+      showResult(result, describe(e), false);
+    }
+  });
+
   $('#prev-page').addEventListener('click', () => { state.page--; renderStatement(); });
   $('#next-page').addEventListener('click', () => { state.page++; renderStatement(); });
 }
@@ -320,7 +464,7 @@ async function start() {
   } else {
     renderAccountList();
     renderDetail();
-    await renderHealth();
+    await Promise.all([renderMarket(), renderHealth()]);
   }
 }
 

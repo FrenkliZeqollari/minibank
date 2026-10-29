@@ -198,6 +198,81 @@ class LedgerDatabaseRulesTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void tradeGrossAmountMustBeQuantityTimesPrice() {
+        UUID customer = insertCustomerAccount();
+        String symbol = insertInstrument();
+        UUID cash = insertTradeCash(customer, -1_000);
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(status ->
+                insertTrade(customer, symbol, "BUY", 10, 100, 999, cash)))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("trades_check");
+    }
+
+    @Test
+    void holdingCannotGoNegative() {
+        UUID customer = insertCustomerAccount();
+        String symbol = insertInstrument();
+        UUID buyCash = insertTradeCash(customer, -1_000);
+        tx.executeWithoutResult(status -> insertTrade(customer, symbol, "BUY", 10, 100, 1_000, buyCash));
+        UUID sellCash = insertTradeCash(customer, 1_100);
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(status ->
+                insertTrade(customer, symbol, "SELL", 11, 100, 1_100, sellCash)))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("would be negative");
+    }
+
+    @Test
+    void tradesAndPricesAreAppendOnly() {
+        UUID customer = insertCustomerAccount();
+        String symbol = insertInstrument();
+        UUID cash = insertTradeCash(customer, -1_000);
+        tx.executeWithoutResult(status -> insertTrade(customer, symbol, "BUY", 10, 100, 1_000, cash));
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE trades SET quantity = 1 WHERE symbol = ?", symbol))
+                .hasMessageContaining("append-only");
+        assertThatThrownBy(() -> jdbc.update("DELETE FROM instrument_prices WHERE symbol = ?", symbol))
+                .hasMessageContaining("append-only");
+    }
+
+    private String insertInstrument() {
+        String symbol = "D" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        jdbc.update("INSERT INTO instruments (symbol, name, currency, created_at) VALUES (?, 'Test', 'EUR', now())", symbol);
+        jdbc.update("INSERT INTO instrument_prices (id, symbol, price, created_at) VALUES (?, ?, 100, now())",
+                UUID.randomUUID(), symbol);
+        return symbol;
+    }
+
+    /** Commits a balanced cash transaction for a trade (customerAmount < 0 buys, > 0 sells). */
+    private UUID insertTradeCash(UUID customer, long customerAmount) {
+        UUID transactionId = UUID.randomUUID();
+        if (customerAmount < 0) {
+            // Fund the customer first, so the buy does not overdraw the account.
+            UUID funding = UUID.randomUUID();
+            tx.executeWithoutResult(status -> {
+                insertTransaction(funding);
+                insertEntry(funding, SystemAccounts.EXTERNAL_FUNDING_ID, customerAmount);
+                insertEntry(funding, customer, -customerAmount);
+            });
+        }
+        tx.executeWithoutResult(status -> {
+            jdbc.update("INSERT INTO transactions (id, type, idempotency_key, request_hash, created_at) "
+                    + "VALUES (?, 'TRADE', ?, 'h', now())", transactionId, "test-" + transactionId);
+            insertEntry(transactionId, customer, customerAmount);
+            insertEntry(transactionId, SystemAccounts.SECURITIES_SETTLEMENT_ID, -customerAmount);
+        });
+        return transactionId;
+    }
+
+    private void insertTrade(UUID account, String symbol, String side, long quantity, long price, long gross,
+                             UUID transactionId) {
+        jdbc.update("INSERT INTO trades (id, account_id, symbol, side, quantity, price, gross_amount, transaction_id, "
+                + "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())",
+                UUID.randomUUID(), account, symbol, side, quantity, price, gross, transactionId);
+    }
+
+    @Test
     void externalFundingSystemAccountIsSeeded() {
         String type = jdbc.queryForObject("SELECT type FROM accounts WHERE id = ? AND owner_name = 'EXTERNAL_FUNDING'",
                 String.class, SystemAccounts.EXTERNAL_FUNDING_ID);

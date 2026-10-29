@@ -534,3 +534,92 @@ The page remembers the accounts opened or added in *this browser* (`localStorage
 ask the server for "all accounts", because there is no such endpoint, on purpose: a real bank
 would only show you *your* accounts, after login. Login and authorization are out of scope for
 this project.
+
+## Milestone 6: A portfolio tracker on top of the ledger
+
+Customers can buy and sell shares (stocks, funds) with the cash in their account, and see what
+their investments are worth.
+
+### Two kinds of assets, one source of truth each
+
+**Problem.** A securities trade moves two things at once: *cash* (which the ledger already
+handles) and *shares* (which it does not). Both must change together, or not at all: a customer
+who paid but got no shares, or got shares without paying, is a serious incident.
+
+**How the code solves it.** Cash stays in the ledger. Buying is an ordinary balanced ledger
+transaction of a new type, `TRADE`:
+
+| account | buy 10 ACME at 12.34 | sell 4 ACME at 15.00 |
+|---|---|---|
+| customer | −12340 | +6000 |
+| `SECURITIES_SETTLEMENT` (system) | +12340 | −6000 |
+
+`SECURITIES_SETTLEMENT` is a new system account standing for "the market": it receives the cash
+when customers buy and pays it out when they sell. Every rule of the earlier milestones applies
+unchanged: zero-sum, no overdraft, cached balance, row locks, idempotency.
+
+The shares are recorded in an append-only `trades` table, one row per trade, linked to the cash
+transaction (`trades.transaction_id`). A holding is the sum of the account's trades (bought −
+sold), the same "balance = sum of history" idea as account balances. `TradeService.trade` writes
+both sides in one DB transaction.
+
+A trade cannot be reversed (`422 trade-not-reversible`): a reversal would give back the cash but
+leave the shares. To undo a buy, you sell.
+
+### Price: the market decides, not the client
+
+A trade executes at the instrument's *current* price (the latest row in the append-only
+`instrument_prices` table). The request only says what to buy and how many, never at what price,
+so a client cannot pick its own price. Prices are entered by hand via
+`POST /instruments/{symbol}/prices`, standing in for a real market data feed. Without a price an
+instrument cannot be traded (`422 no-market-price`).
+
+### No short selling, even under concurrency
+
+**Problem.** Selling shares you do not have ("short selling") is a different, risky product.
+Here a customer can only sell what they hold. But two sell orders arriving at the same moment
+could both see "5 held" and together sell 10. This is the Milestone 3 race again, now for shares.
+
+**How the code solves it.** Exactly as for overdrafts. `TradeService` locks the customer's
+account row (with `AccountLocks`, in id order) *before* checking cash or holdings, so all trades
+of one account run one after another. A deferred constraint trigger
+(`check_holding_not_negative` in `V6__portfolio.sql`) refuses at commit any holding below 0, as
+a safety net. `TradeApiTest.concurrentSellsNeverSellMoreThanHeld` sends 20 sell orders for 1
+share each against a holding of 5: exactly 5 succeed. With the account lock removed on purpose,
+the safety net refused the excess sells (`holding … would be negative`) and the test failed.
+
+### Cost basis and profit: the average cost method
+
+**Problem.** To say whether an investment made money, you need its *cost basis*: what the shares
+you still hold cost you. If you bought 10 shares at €10 and 10 at €20, what did the 5 you just
+sold cost?
+
+**How the code solves it.** `AverageCostBook` uses the *average cost* method: every share of an
+instrument cost the average, here €15. It is simple and widely used in portfolio reporting, but
+it is a choice. Other methods exist, and tax rules may require one: German tax law, for example,
+uses *first in, first out* (FIFO), where the oldest shares count as sold first. Replaying an
+account's trades in order (`trades.seq`):
+
+- **buy:** quantity and cost basis increase by what was paid;
+- **sell n of q shares:** n/q of the cost basis leaves with them. The *realized* profit is what
+  the sale brought in minus that cost.
+
+The *unrealized* profit is "market value at the latest price − cost basis": what you would
+make if you sold everything now. `GET /accounts/{id}/portfolio` shows both, per position and in
+total, along with cash and total value (cash + market value).
+
+### Rounding: where does the odd cent go?
+
+n/q of an amount in cents is often not a whole number of cents (3 shares for €0.04: €0.0133…
+each). `AverageCostBook` rounds the removed cost *down* and leaves the remainder with the shares
+still held. When the last share is sold, all remaining cost goes with it. So no cent is ever
+lost or invented: (cost of everything sold) + (cost basis still held) = (everything paid). The
+unit test `costIsConservedOverManyRandomTrades` checks this after each of 1,000 random trades.
+Without a rule like this, rounding errors pile up and the profit figures stop adding up, which
+in a bank ends up in a customer's tax statement.
+
+### What this is not
+
+There are no fees, dividends, fractional shares, currencies other than EUR, or real market
+connection. A real broker also *settles* trades later (in the EU, two business days after the
+trade) through a central securities depository. Here, cash and shares move at once.

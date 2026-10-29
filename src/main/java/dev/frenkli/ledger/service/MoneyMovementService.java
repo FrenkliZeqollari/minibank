@@ -1,8 +1,6 @@
 package dev.frenkli.ledger.service;
 
 import dev.frenkli.ledger.domain.Account;
-import dev.frenkli.ledger.domain.AccountStatus;
-import dev.frenkli.ledger.domain.AccountType;
 import dev.frenkli.ledger.domain.Posting;
 import dev.frenkli.ledger.domain.SystemAccounts;
 import dev.frenkli.ledger.domain.TransactionType;
@@ -43,8 +41,8 @@ public class MoneyMovementService {
         requirePositive(amount);
         Currencies.requireSupported(currency);
         Map<UUID, Account> locked = accountLocks.lockInIdOrder(List.of(SystemAccounts.EXTERNAL_FUNDING_ID, accountId));
-        Account account = requireUsableCustomerAccount(locked.get(accountId));
-        requireSameCurrency(account, currency);
+        Account account = AccountRules.requireUsableCustomerAccount(locked.get(accountId));
+        AccountRules.requireSameCurrency(account, currency);
 
         return new MovementResult(ledger.record(TransactionType.DEPOSIT, description, idempotencyKey, requestHash,
                 List.of(new Posting(SystemAccounts.EXTERNAL_FUNDING_ID, -amount),
@@ -71,10 +69,10 @@ public class MoneyMovementService {
         // Lock both accounts BEFORE reading the balance. Without the lock, two transfers could
         // both read a balance of 100, both decide that 80 is affordable, and both book it.
         Map<UUID, Account> locked = accountLocks.lockInIdOrder(List.of(fromAccountId, toAccountId));
-        Account from = requireUsableCustomerAccount(locked.get(fromAccountId));
-        Account to = requireUsableCustomerAccount(locked.get(toAccountId));
-        requireSameCurrency(from, currency);
-        requireSameCurrency(to, currency);
+        Account from = AccountRules.requireUsableCustomerAccount(locked.get(fromAccountId));
+        Account to = AccountRules.requireUsableCustomerAccount(locked.get(toAccountId));
+        AccountRules.requireSameCurrency(from, currency);
+        AccountRules.requireSameCurrency(to, currency);
 
         // No overdrafts for customer accounts. Safe under concurrency: we hold the lock on
         // 'from', so no other transaction can change its balance until we commit.
@@ -95,22 +93,6 @@ public class MoneyMovementService {
         if (amount <= 0) {
             throw new BusinessRuleException(BusinessRule.NON_POSITIVE_AMOUNT,
                     "Amount must be greater than 0 cents, got " + amount);
-        }
-    }
-
-    private static Account requireUsableCustomerAccount(Account account) {
-        // System accounts are moved only by the bank's own bookings, never through this API.
-        if (account.getType() != AccountType.CUSTOMER || account.getStatus() != AccountStatus.ACTIVE) {
-            throw new BusinessRuleException(BusinessRule.ACCOUNT_NOT_USABLE,
-                    "Account " + account.getId() + " is not an active customer account");
-        }
-        return account;
-    }
-
-    private static void requireSameCurrency(Account account, String currency) {
-        if (!account.getCurrency().equals(currency)) {
-            throw new BusinessRuleException(BusinessRule.CURRENCY_MISMATCH,
-                    "Account " + account.getId() + " is in " + account.getCurrency() + ", request is in " + currency);
         }
     }
 }
