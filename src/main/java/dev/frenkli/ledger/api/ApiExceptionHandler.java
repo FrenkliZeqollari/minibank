@@ -3,6 +3,8 @@ package dev.frenkli.ledger.api;
 import dev.frenkli.ledger.service.AccountNotFoundException;
 import dev.frenkli.ledger.service.AlreadyReversedException;
 import dev.frenkli.ledger.service.BusinessRuleException;
+import dev.frenkli.ledger.service.InstrumentAlreadyExistsException;
+import dev.frenkli.ledger.service.InstrumentNotFoundException;
 import dev.frenkli.ledger.service.TransactionNotFoundException;
 import java.net.URI;
 import java.util.Locale;
@@ -41,6 +43,22 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
         problem.setTitle("Already reversed");
         problem.setType(URI.create("urn:problem:ledger:already-reversed"));
+        return problem;
+    }
+
+    @ExceptionHandler(InstrumentNotFoundException.class)
+    ProblemDetail instrumentNotFound(InstrumentNotFoundException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+        problem.setTitle("Instrument not found");
+        problem.setType(URI.create("urn:problem:ledger:instrument-not-found"));
+        return problem;
+    }
+
+    @ExceptionHandler(InstrumentAlreadyExistsException.class)
+    ProblemDetail instrumentAlreadyExists(InstrumentAlreadyExistsException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+        problem.setTitle("Instrument already exists");
+        problem.setType(URI.create("urn:problem:ledger:instrument-already-exists"));
         return problem;
     }
 

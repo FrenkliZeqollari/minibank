@@ -39,3 +39,19 @@ export function formatCents(cents, currency = 'EUR') {
   const fraction = String(abs % 100).padStart(2, '0');
   return `${sign}${units}.${fraction} ${currency}`;
 }
+
+/** Parses a number of whole shares typed by a person ("10"). Throws for anything else. */
+export function parseShareQuantity(input) {
+  const text = String(input ?? '').trim();
+  if (!/^\d+$/.test(text)) {
+    throw new Error('Enter a whole number of shares, like 10.');
+  }
+  const quantity = BigInt(text);
+  if (quantity <= 0n) {
+    throw new Error('The quantity must be at least 1.');
+  }
+  if (quantity > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error('The quantity is too large.');
+  }
+  return Number(quantity);
+}

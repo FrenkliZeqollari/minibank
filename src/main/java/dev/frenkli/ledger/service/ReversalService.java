@@ -48,6 +48,12 @@ public class ReversalService {
 
         LedgerTransaction original = transactions.findById(transactionId)
                 .orElseThrow(() -> new TransactionNotFoundException(transactionId));
+        if (original.getType() == TransactionType.TRADE) {
+            // Reversing only the cash would leave the shares in place: cash and holdings would no
+            // longer match. A trade is undone by trading back (selling what was bought).
+            throw new BusinessRuleException(BusinessRule.TRADE_NOT_REVERSIBLE,
+                    "Transaction " + transactionId + " is a securities trade; place an opposite trade instead");
+        }
         if (original.getType() == TransactionType.REVERSAL) {
             // To undo a reversal, book the original operation again as a new transaction.
             throw new BusinessRuleException(BusinessRule.REVERSAL_NOT_REVERSIBLE,

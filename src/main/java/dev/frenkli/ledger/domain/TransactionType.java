@@ -3,5 +3,7 @@ package dev.frenkli.ledger.domain;
 public enum TransactionType {
     DEPOSIT,
     TRANSFER,
-    REVERSAL
+    REVERSAL,
+    /** The cash side of a securities trade (buy or sell). */
+    TRADE
 }

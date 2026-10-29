@@ -9,7 +9,12 @@ public enum BusinessRule {
     INSUFFICIENT_FUNDS("Insufficient funds"),
     ACCOUNT_NOT_USABLE("Account cannot be used"),
     IDEMPOTENCY_KEY_REUSED("Idempotency-Key reused for a different request"),
-    REVERSAL_NOT_REVERSIBLE("A reversal cannot be reversed");
+    REVERSAL_NOT_REVERSIBLE("A reversal cannot be reversed"),
+    TRADE_NOT_REVERSIBLE("A trade cannot be reversed"),
+    NON_POSITIVE_QUANTITY("Quantity must be positive"),
+    INSUFFICIENT_HOLDINGS("Insufficient holdings"),
+    NO_MARKET_PRICE("No market price"),
+    AMOUNT_TOO_LARGE("Amount too large");
 
     private final String title;
 
