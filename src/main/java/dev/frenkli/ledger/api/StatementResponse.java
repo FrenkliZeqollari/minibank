@@ -26,13 +26,15 @@ public record StatementResponse(
             String description,
             @Schema(description = "Signed cents: positive = money in, negative = money out", example = "-2500")
             long amount,
-            Instant createdAt) {
+            Instant createdAt,
+            @Schema(description = "If this transaction was reversed: the reversal's transaction id; otherwise null")
+            UUID reversedByTransactionId) {
     }
 
     static StatementResponse from(UUID accountId, Page<StatementLine> page) {
         List<Line> lines = page.getContent().stream()
                 .map(l -> new Line(l.entryId(), l.transactionId(), l.transactionType(), l.description(),
-                        l.amount(), l.createdAt()))
+                        l.amount(), l.createdAt(), l.reversedByTransactionId()))
                 .toList();
         return new StatementResponse(accountId, lines, page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages());

@@ -7,6 +7,7 @@ import dev.frenkli.ledger.domain.TransactionType;
 import dev.frenkli.ledger.repository.AccountRepository;
 import dev.frenkli.ledger.repository.EntryRepository;
 import dev.frenkli.ledger.repository.LedgerTransactionRepository;
+import java.time.Clock;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -21,12 +22,14 @@ public class LedgerService {
     private final LedgerTransactionRepository transactions;
     private final EntryRepository entries;
     private final AccountRepository accounts;
+    private final Clock clock;
 
     public LedgerService(LedgerTransactionRepository transactions, EntryRepository entries,
-                         AccountRepository accounts) {
+                         AccountRepository accounts, Clock clock) {
         this.transactions = transactions;
         this.entries = entries;
         this.accounts = accounts;
+        this.clock = clock;
     }
 
     /**
@@ -48,7 +51,8 @@ public class LedgerService {
         DoubleEntry.requireBalanced(postings);
 
         LedgerTransaction transaction = transactions.save(
-                new LedgerTransaction(type, description, idempotencyKey, requestHash, reversesTransactionId));
+                new LedgerTransaction(type, description, idempotencyKey, requestHash, reversesTransactionId,
+                        clock.instant()));
         List<Entry> saved = postings.stream()
                 .map(p -> new Entry(transaction.getId(), p.accountId(), p.amount(), transaction.getCreatedAt()))
                 .map(entries::save)

@@ -631,3 +631,79 @@ in a bank ends up in a customer's tax statement.
 There are no fees, dividends, fractional shares, currencies other than EUR, or real market
 connection. A real broker also *settles* trades later (in the EU, two business days after the
 trade) through a central securities depository. Here, cash and shares move at once.
+
+## Milestone 7: A modern frontend and a demo bank
+
+The ledger was correct but hard to *see*. This milestone turns it into something that looks and
+feels like online banking: a React + TypeScript single-page app with a dashboard, charts,
+payments with a review step, investments, a market screen and a ledger check. It also adds a
+`demo` profile that fills the bank with six months of believable history. The banking ideas
+behind it:
+
+### Time is a dependency
+
+**Problem.** Code that calls `Instant.now()` directly can only ever book "now". That makes it
+impossible to create realistic history (demo data, data migrations) through the normal code, and
+hard to test anything that depends on dates ("month-end", "daily limit", "standing order on the
+1st").
+
+**How the code solves it.** No code calls `Instant.now()` any more. Services ask a `java.time.Clock`
+bean (`TimeConfig`). In production it is the system clock in UTC. The `demo` profile replaces it
+with a `SettableClock`, so `DemoDataSeeder` can book a salary "on the 1st of June" through the
+normal `MoneyMovementService`, with every rule (zero-sum, no overdraft, idempotency) applied.
+Standing orders in Milestone 10 will rely on the same clock.
+
+### The business day: which date does a payment belong to?
+
+**Problem.** Timestamps are stored in UTC. But "the 2nd of March" for a German bank means the 2nd
+of March in Berlin. A payment at 00:30 Berlin time is still the 1st in UTC. Grouping by UTC date
+would put it on the wrong day, and on month-end in the wrong month.
+
+**How the code solves it.** `ledger.business-zone` (default `Europe/Berlin`) is the bank's
+business time zone. `AccountInsightQueries` groups entries with
+`(created_at AT TIME ZONE 'Europe/Berlin')::date`. `AccountInsightApiTest.daysAreBusinessDaysInBerlinNotUtc`
+books a deposit at 00:30 Berlin time and checks that it counts for that day, not the day before.
+
+### End-of-day balances and monthly totals
+
+`GET /accounts/{id}/balance-history?days=90` returns each business day's **closing balance**:
+the balance before the period (one `SUM`), plus each day's net change, added up day by day. The
+start balance and the daily sums are read in one `REPEATABLE_READ` snapshot, so they agree.
+`GET /accounts/{id}/monthly-summary?months=6` returns money in and money out per month. Both are
+read-only views on the same entries: the ledger stays the single source of truth.
+
+### A bug the demo data found: stale objects inside one transaction
+
+The demo seeder books hundreds of payments in **one** DB transaction (all or nothing). That found
+a real bug. The cached balance is updated with a direct SQL `UPDATE` (Milestone 2), but JPA keeps
+already-loaded `Account` objects in a per-transaction cache (the *persistence context*). A second
+booking in the same transaction checked the overdraft rule against the **old** balance. Normal
+requests were safe (one booking per transaction), but standing orders would not have been.
+`AccountRepository.addToBalance` now clears that cache after the update
+(`clearAutomatically = true`), and `SeveralBookingsInOneTransactionTest` reproduces the bug.
+Lesson: a bulk SQL update and an object cache must be kept in sync explicitly.
+
+### The frontend's share of the rules
+
+- **Money:** typed amounts become integer cents through string and `BigInt` arithmetic
+  (`frontend/src/lib/money.ts`), never through a float. Display is German style: `1.234,56 €`.
+- **Idempotency:** `MoneyOperation` keeps one `Idempotency-Key` per intended payment. It reuses
+  the key after a network error, and drops it on a definite answer or when the form changes
+  (`client.test.ts`).
+- **Review before sending:** a transfer goes *details → review → done*, like in a banking app.
+  The review shows the balance after the payment. Nothing is sent before "Confirm and send"
+  (`PaymentsPage.test.tsx`).
+- **Only offer what is allowed:** the statement line of a reversed transaction now says by which
+  reversal (`reversedByTransactionId`), so the app shows "Reversed" instead of offering a second
+  reversal that the server would refuse with `409`.
+
+### How the frontend is built
+
+The React app lives in `frontend/`. Maven builds it: `frontend-maven-plugin` installs a pinned
+Node into `target/`, runs `npm ci` (exact versions from `package-lock.json`), the Vitest tests and
+`vite build`, and copies the result into the jar's `static/` folder. So one `./mvnw verify` tests
+everything, and the jar contains the whole bank. The app uses hash URLs (`/#/accounts/…`), so its
+page addresses never collide with API paths like `/accounts/{id}`.
+
+**Still missing, on purpose:** there is no login yet, so every account is visible and anyone can
+top up money. That is Milestone 8.

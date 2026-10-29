@@ -40,10 +40,10 @@ public class InstrumentPrice {
         // for JPA
     }
 
-    public InstrumentPrice(String symbol, long price) {
+    public InstrumentPrice(String symbol, long price, Instant createdAt) {
         this.symbol = symbol;
         this.price = price;
-        this.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS); // Postgres precision
+        this.createdAt = createdAt.truncatedTo(ChronoUnit.MICROS); // Postgres precision
     }
 
     public UUID getId() {

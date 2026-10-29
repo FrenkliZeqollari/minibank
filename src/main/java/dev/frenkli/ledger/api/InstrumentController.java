@@ -7,6 +7,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -47,6 +50,15 @@ public class InstrumentController {
     @Operation(summary = "List all instruments with their current prices")
     public List<InstrumentResponse> list() {
         return instrumentService.list().stream().map(InstrumentResponse::from).toList();
+    }
+
+    @GetMapping("/{symbol}/prices")
+    @Operation(summary = "Get the price history", description = "The last `limit` recorded prices, oldest first.")
+    @ApiResponse(responseCode = "200", description = "Price history.")
+    @ApiResponse(responseCode = "404", description = "Unknown instrument.", content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
+    public List<PriceResponse> priceHistory(@PathVariable String symbol,
+                                            @RequestParam(defaultValue = "90") @Min(1) @Max(1000) int limit) {
+        return instrumentService.priceHistory(symbol, limit).stream().map(PriceResponse::from).toList();
     }
 
     @PostMapping("/{symbol}/prices")

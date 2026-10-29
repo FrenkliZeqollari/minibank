@@ -53,14 +53,14 @@ public class Account {
         // for JPA
     }
 
-    public static Account openCustomerAccount(String ownerName, String currency) {
+    public static Account openCustomerAccount(String ownerName, String currency, Instant openedAt) {
         Account account = new Account();
         account.ownerName = ownerName;
         account.type = AccountType.CUSTOMER;
         account.currency = currency;
         account.balance = 0;
         account.status = AccountStatus.ACTIVE;
-        account.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS); // Postgres precision
+        account.createdAt = openedAt.truncatedTo(ChronoUnit.MICROS); // Postgres precision
         return account;
     }
 

@@ -1,5 +1,6 @@
 package dev.frenkli.ledger.api;
 
+import dev.frenkli.ledger.service.AccountInsightService;
 import dev.frenkli.ledger.service.AccountService;
 import dev.frenkli.ledger.service.StatementService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -30,10 +31,24 @@ public class AccountController {
 
     private final AccountService accountService;
     private final StatementService statementService;
+    private final AccountInsightService insightService;
 
-    public AccountController(AccountService accountService, StatementService statementService) {
+    public AccountController(AccountService accountService, StatementService statementService,
+                             AccountInsightService insightService) {
         this.accountService = accountService;
         this.statementService = statementService;
+        this.insightService = insightService;
+    }
+
+    @GetMapping
+    @Operation(summary = "List customer accounts", description = "Oldest first. System accounts are not listed.")
+    @ApiResponse(responseCode = "200", description = "One page of accounts.")
+    @ApiResponse(responseCode = "400", description = "page < 0, or size outside 1-100.", content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
+    public AccountPageResponse list(@Parameter(description = "Page number, starting at 0")
+                                    @RequestParam(defaultValue = "0") @Min(0) int page,
+                                    @Parameter(description = "Accounts per page, 1 to 100")
+                                    @RequestParam(defaultValue = "50") @Min(1) @Max(100) int size) {
+        return AccountPageResponse.from(accountService.listCustomerAccounts(page, size));
     }
 
     @PostMapping
@@ -56,6 +71,28 @@ public class AccountController {
     }
 
     /** The account statement, newest first. {@code page} starts at 0; {@code size} is 1 to 100. */
+    @GetMapping("/{id}/balance-history")
+    @Operation(summary = "Get the balance at the end of each day",
+            description = "One point per business day (bank's time zone) for the last `days` days, today included.")
+    @ApiResponse(responseCode = "200", description = "Daily closing balances, oldest first.")
+    @ApiResponse(responseCode = "400", description = "days outside 1-366.", content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "404", description = "Unknown account.", content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
+    public BalanceHistoryResponse balanceHistory(@PathVariable UUID id,
+                                                 @RequestParam(defaultValue = "90") @Min(1) @Max(366) int days) {
+        return BalanceHistoryResponse.from(id, insightService.balanceHistory(id, days));
+    }
+
+    @GetMapping("/{id}/monthly-summary")
+    @Operation(summary = "Get money in and out per month",
+            description = "For the last `months` calendar months (bank's time zone), the current one included.")
+    @ApiResponse(responseCode = "200", description = "One entry per month, oldest first.")
+    @ApiResponse(responseCode = "400", description = "months outside 1-24.", content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "404", description = "Unknown account.", content = @Content(mediaType = ApiDocs.PROBLEM_JSON, schema = @Schema(implementation = ProblemDetail.class)))
+    public MonthlySummaryResponse monthlySummary(@PathVariable UUID id,
+                                                 @RequestParam(defaultValue = "6") @Min(1) @Max(24) int months) {
+        return MonthlySummaryResponse.from(id, insightService.monthlySummary(id, months));
+    }
+
     @GetMapping("/{id}/entries")
     @Operation(summary = "Get the account statement", description = "The account's entries, newest first, one page "
             + "at a time.")

@@ -49,7 +49,7 @@ public class LedgerTransaction {
     }
 
     public LedgerTransaction(TransactionType type, String description, String idempotencyKey, String requestHash,
-                             UUID reversesTransactionId) {
+                             UUID reversesTransactionId, Instant createdAt) {
         this.type = type;
         this.reversesTransactionId = reversesTransactionId;
         this.description = description;
@@ -57,7 +57,7 @@ public class LedgerTransaction {
         this.requestHash = requestHash;
         // Postgres stores microseconds. Truncating here means the value we return now is exactly
         // the value a replay will later read back from the database.
-        this.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        this.createdAt = createdAt.truncatedTo(ChronoUnit.MICROS);
     }
 
     public UUID getId() {
