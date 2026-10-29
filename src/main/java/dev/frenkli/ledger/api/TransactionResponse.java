@@ -1,5 +1,6 @@
 package dev.frenkli.ledger.api;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import dev.frenkli.ledger.domain.LedgerTransaction;
 import dev.frenkli.ledger.domain.TransactionType;
 import dev.frenkli.ledger.service.RecordedTransaction;
@@ -12,6 +13,8 @@ public record TransactionResponse(
         UUID id,
         TransactionType type,
         String description,
+        // Only present on a REVERSAL; left out of the JSON otherwise.
+        @JsonInclude(JsonInclude.Include.NON_NULL) UUID reversesTransactionId,
         Instant createdAt,
         List<EntryResponse> entries) {
 
@@ -27,6 +30,7 @@ public record TransactionResponse(
                 .map(e -> new EntryResponse(e.getAccountId(), e.getAmount()))
                 .sorted(Comparator.comparingLong(EntryResponse::amount).thenComparing(EntryResponse::accountId))
                 .toList();
-        return new TransactionResponse(t.getId(), t.getType(), t.getDescription(), t.getCreatedAt(), entries);
+        return new TransactionResponse(t.getId(), t.getType(), t.getDescription(), t.getReversesTransactionId(),
+                t.getCreatedAt(), entries);
     }
 }

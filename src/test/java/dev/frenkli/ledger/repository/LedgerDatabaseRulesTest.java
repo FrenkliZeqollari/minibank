@@ -161,6 +161,43 @@ class LedgerDatabaseRulesTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void aTransactionCanBeReversedOnlyOnce() {
+        UUID customer = insertCustomerAccount();
+        UUID original = UUID.randomUUID();
+        tx.executeWithoutResult(status -> {
+            insertTransaction(original);
+            insertEntry(original, SystemAccounts.EXTERNAL_FUNDING_ID, -300);
+            insertEntry(original, customer, 300);
+        });
+        insertReversal(original, customer, 100);
+
+        assertThatThrownBy(() -> insertReversal(original, customer, 100))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("transactions_reversed_once");
+    }
+
+    @Test
+    void reversalMustSayWhatItReverses() {
+        UUID transactionId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO transactions (id, type, idempotency_key, request_hash, "
+                + "created_at) VALUES (?, 'REVERSAL', ?, 'h', now())", transactionId, "test-" + transactionId))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("transactions_reversal_link");
+    }
+
+    /** A (deliberately simplified) reversal of {@code original}, booked with raw SQL. */
+    private void insertReversal(UUID original, UUID customer, long amount) {
+        UUID reversal = UUID.randomUUID();
+        tx.executeWithoutResult(status -> {
+            jdbc.update("INSERT INTO transactions (id, type, idempotency_key, request_hash, reverses_transaction_id, "
+                    + "created_at) VALUES (?, 'REVERSAL', ?, 'h', ?, now())", reversal, "test-" + reversal, original);
+            insertEntry(reversal, customer, -amount);
+            insertEntry(reversal, SystemAccounts.EXTERNAL_FUNDING_ID, amount);
+        });
+    }
+
+    @Test
     void externalFundingSystemAccountIsSeeded() {
         String type = jdbc.queryForObject("SELECT type FROM accounts WHERE id = ? AND owner_name = 'EXTERNAL_FUNDING'",
                 String.class, SystemAccounts.EXTERNAL_FUNDING_ID);

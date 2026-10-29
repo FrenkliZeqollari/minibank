@@ -376,3 +376,71 @@ check the existing ones.
 
 **Without all this.** Every network glitch could turn into a double payment, which is exactly
 the kind of error that makes customers lose trust in a bank.
+
+## Milestone 5: Reversals
+
+### Correcting mistakes without erasing history
+
+**Problem.** Money was sent to the wrong account, or a deposit was booked twice by an operator.
+It must be undone. But the ledger is append-only (Milestone 1): deleting the transaction would
+destroy the evidence that it ever happened, and auditors, customers and courts need to see the
+full story: "€25 went to Bob on Monday and was taken back on Tuesday".
+
+**How the code solves it.** `POST /transactions/{id}/reversal` (`ReversalService.reverse`)
+books a new `REVERSAL` transaction whose entries are the *mirror image* of the original: the
+same accounts, every amount with the opposite sign.
+
+| transaction | Alice | Bob |
+|---|---|---|
+| original transfer | −2500 | +2500 |
+| reversal | +2500 | −2500 |
+| **sum** | **0** | **0** |
+
+The reversal is itself a normal, balanced double-entry transaction, so every rule from the
+earlier milestones applies to it unchanged: zero-sum check, cached balances, row locks,
+idempotency. Its `reverses_transaction_id` points back to the original, and both appear on the
+statement. This is how accountants have corrected ledgers for centuries ("Storno" in German
+banking): you never use an eraser, you book a correction.
+
+### Reverse once
+
+**Problem.** Reversing the same transfer twice would give Alice her money back twice.
+
+**How the code solves it.** Three layers:
+
+1. **Service:** after locking the accounts, `ReversalService` checks whether a reversal already
+   points to this transaction and answers `409 Conflict` (`already-reversed`). 409 rather than
+   422: the request is fine in itself, but it conflicts with the current state of the resource.
+2. **Locking order:** two simultaneous reversals of one transaction involve the same accounts,
+   so the second waits at the lock until the first has committed, and only *then* checks. If the
+   check came before the lock, both would see "not reversed yet". The second would then fail on a
+   different rule (Bob has no money left) and report a misleading error.
+   `ReversalApiTest.parallelReversalsWithDifferentKeysReverseOnlyOnce` sends 10 at once and
+   expects exactly one `201` and nine `409`.
+3. **Database:** `V5__reversal_rules.sql` adds `UNIQUE (reverses_transaction_id)`, so even a
+   bug cannot commit a second reversal. A second constraint ties the `REVERSAL` type and the link
+   together: a reversal must say what it reverses, and nothing else may claim to reverse
+   something.
+
+A reversal itself cannot be reversed (`422 reversal-not-reversible`). "Undo the undo" is just
+booking the original operation again, as a new, clearly labelled transaction.
+
+### A reversal can be refused
+
+**Problem.** Alice sends Bob €25, Bob spends €20 of it, then Alice's transfer is reversed.
+Taking €25 back from Bob would leave him at −€5, an overdraft he never agreed to.
+
+**How the code solves it.** Domain rule 5 (no overdrafts for customers) applies to reversals
+like to anything else: the reversal is refused with `422 insufficient-funds`, and nothing is
+booked. In a real bank this case goes to a human, who settles it outside the ledger (asking Bob,
+writing it off, and so on). System accounts such as `EXTERNAL_FUNDING` may still go negative, so
+reversing a deposit is only refused if the customer no longer has the money.
+
+### Idempotent like every money movement
+
+A reversal needs an `Idempotency-Key` too. A retry with the same key returns the original
+`201`, not a `409`: the client is not asking for a *second* reversal, it is asking again for the
+*same* one.
+
+**Without all this.** Either history gets rewritten (no audit trail), or corrections can be
+applied twice or push customers into an overdraft.

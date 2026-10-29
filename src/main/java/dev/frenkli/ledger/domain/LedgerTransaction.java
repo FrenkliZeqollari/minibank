@@ -48,8 +48,10 @@ public class LedgerTransaction {
         // for JPA
     }
 
-    public LedgerTransaction(TransactionType type, String description, String idempotencyKey, String requestHash) {
+    public LedgerTransaction(TransactionType type, String description, String idempotencyKey, String requestHash,
+                             UUID reversesTransactionId) {
         this.type = type;
+        this.reversesTransactionId = reversesTransactionId;
         this.description = description;
         this.idempotencyKey = idempotencyKey;
         this.requestHash = requestHash;
@@ -76,6 +78,11 @@ public class LedgerTransaction {
 
     public String getRequestHash() {
         return requestHash;
+    }
+
+    /** For a REVERSAL: the transaction it cancels. Null for every other type. */
+    public UUID getReversesTransactionId() {
+        return reversesTransactionId;
     }
 
     public Instant getCreatedAt() {

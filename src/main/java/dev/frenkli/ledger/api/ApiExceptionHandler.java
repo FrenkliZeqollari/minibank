@@ -1,7 +1,9 @@
 package dev.frenkli.ledger.api;
 
 import dev.frenkli.ledger.service.AccountNotFoundException;
+import dev.frenkli.ledger.service.AlreadyReversedException;
 import dev.frenkli.ledger.service.BusinessRuleException;
+import dev.frenkli.ledger.service.TransactionNotFoundException;
 import java.net.URI;
 import java.util.Locale;
 import org.springframework.http.HttpStatus;
@@ -23,6 +25,22 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
         problem.setTitle("Account not found");
         problem.setType(URI.create("urn:problem:ledger:account-not-found"));
+        return problem;
+    }
+
+    @ExceptionHandler(TransactionNotFoundException.class)
+    ProblemDetail transactionNotFound(TransactionNotFoundException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+        problem.setTitle("Transaction not found");
+        problem.setType(URI.create("urn:problem:ledger:transaction-not-found"));
+        return problem;
+    }
+
+    @ExceptionHandler(AlreadyReversedException.class)
+    ProblemDetail alreadyReversed(AlreadyReversedException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+        problem.setTitle("Already reversed");
+        problem.setType(URI.create("urn:problem:ledger:already-reversed"));
         return problem;
     }
 

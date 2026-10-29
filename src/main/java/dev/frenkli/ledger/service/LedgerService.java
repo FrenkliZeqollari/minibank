@@ -9,6 +9,7 @@ import dev.frenkli.ledger.repository.EntryRepository;
 import dev.frenkli.ledger.repository.LedgerTransactionRepository;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,10 +38,17 @@ public class LedgerService {
     @Transactional(propagation = Propagation.MANDATORY)
     public RecordedTransaction record(TransactionType type, String description, String idempotencyKey,
                                       String requestHash, List<Posting> postings) {
+        return record(type, description, idempotencyKey, requestHash, null, postings);
+    }
+
+    /** As above; {@code reversesTransactionId} links a REVERSAL to the transaction it cancels. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public RecordedTransaction record(TransactionType type, String description, String idempotencyKey,
+                                      String requestHash, UUID reversesTransactionId, List<Posting> postings) {
         DoubleEntry.requireBalanced(postings);
 
         LedgerTransaction transaction = transactions.save(
-                new LedgerTransaction(type, description, idempotencyKey, requestHash));
+                new LedgerTransaction(type, description, idempotencyKey, requestHash, reversesTransactionId));
         List<Entry> saved = postings.stream()
                 .map(p -> new Entry(transaction.getId(), p.accountId(), p.amount(), transaction.getCreatedAt()))
                 .map(entries::save)
@@ -49,7 +57,7 @@ public class LedgerService {
         // Each UPDATE locks its account row until commit. Updating in the same order (by account
         // id) in every transaction means two transactions never wait for each other in a circle
         // (A then B vs. B then A), which would be a deadlock. Same order as
-        // MoneyMovementService.lockInIdOrder, which normally already holds these locks.
+        // AccountLocks.lockInIdOrder, which normally already holds these locks.
         postings.stream()
                 .sorted(Comparator.comparing(Posting::accountId))
                 .forEach(p -> {
