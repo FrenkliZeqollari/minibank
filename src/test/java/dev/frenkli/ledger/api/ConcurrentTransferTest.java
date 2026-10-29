@@ -46,7 +46,7 @@ class ConcurrentTransferTest extends AbstractApiTest {
         watcher.start();
 
         // 50 transfers of 10.00 EUR from an account holding 100.00 EUR: exactly 10 can succeed.
-        List<HttpStatusCode> statuses = runAtOnce(THREADS, i -> () -> rest.postForEntity("/transfers",
+        List<HttpStatusCode> statuses = runAtOnce(THREADS, i -> () -> postWithNewKey("/transfers",
                 Map.of("fromAccountId", source,
                         "toAccountId", recipients.get(i % recipients.size()),
                         "amount", 1_000,
@@ -75,7 +75,7 @@ class ConcurrentTransferTest extends AbstractApiTest {
 
         // Half the requests go A -> B, half B -> A. Locking in request order (from, then to)
         // would deadlock: one transaction holds A and waits for B, the other holds B, waits for A.
-        List<HttpStatusCode> statuses = runAtOnce(THREADS, i -> () -> rest.postForEntity("/transfers",
+        List<HttpStatusCode> statuses = runAtOnce(THREADS, i -> () -> postWithNewKey("/transfers",
                 Map.of("fromAccountId", i % 2 == 0 ? alice : bob,
                         "toAccountId", i % 2 == 0 ? bob : alice,
                         "amount", 100,

@@ -16,7 +16,7 @@ class DepositApiTest extends AbstractApiTest {
     void depositBooksMoneyFromExternalFundingToTheCustomer() {
         UUID account = createAccount("Alice");
 
-        ResponseEntity<TransactionResponse> response = rest.postForEntity("/deposits",
+        ResponseEntity<TransactionResponse> response = postWithNewKey("/deposits",
                 Map.of("accountId", account, "amount", 10_000, "currency", "EUR", "description", "Salary"),
                 TransactionResponse.class);
 
@@ -43,7 +43,7 @@ class DepositApiTest extends AbstractApiTest {
 
     @Test
     void depositToUnknownAccountIs404() {
-        ResponseEntity<Map> response = rest.postForEntity("/deposits",
+        ResponseEntity<Map> response = postWithNewKey("/deposits",
                 Map.of("accountId", UUID.randomUUID(), "amount", 100, "currency", "EUR"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -53,7 +53,7 @@ class DepositApiTest extends AbstractApiTest {
     void depositOfZeroIs422() {
         UUID account = createAccount("Alice");
 
-        ResponseEntity<Map> response = rest.postForEntity("/deposits",
+        ResponseEntity<Map> response = postWithNewKey("/deposits",
                 Map.of("accountId", account, "amount", 0, "currency", "EUR"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -65,7 +65,7 @@ class DepositApiTest extends AbstractApiTest {
     void depositInOtherCurrencyIs422() {
         UUID account = createAccount("Alice");
 
-        ResponseEntity<Map> response = rest.postForEntity("/deposits",
+        ResponseEntity<Map> response = postWithNewKey("/deposits",
                 Map.of("accountId", account, "amount", 100, "currency", "USD"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -73,7 +73,7 @@ class DepositApiTest extends AbstractApiTest {
 
     @Test
     void depositIntoTheSystemAccountIs422() {
-        ResponseEntity<Map> response = rest.postForEntity("/deposits",
+        ResponseEntity<Map> response = postWithNewKey("/deposits",
                 Map.of("accountId", SystemAccounts.EXTERNAL_FUNDING_ID, "amount", 100, "currency", "EUR"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -84,7 +84,7 @@ class DepositApiTest extends AbstractApiTest {
     void depositWithoutAmountIs400() {
         UUID account = createAccount("Alice");
 
-        ResponseEntity<Map> response = rest.postForEntity("/deposits",
+        ResponseEntity<Map> response = postWithNewKey("/deposits",
                 Map.of("accountId", account, "currency", "EUR"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);

@@ -35,10 +35,12 @@ public class LedgerService {
      * keeps the cached balance equal to the sum of the entries.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public RecordedTransaction record(TransactionType type, String description, List<Posting> postings) {
+    public RecordedTransaction record(TransactionType type, String description, String idempotencyKey,
+                                      String requestHash, List<Posting> postings) {
         DoubleEntry.requireBalanced(postings);
 
-        LedgerTransaction transaction = transactions.save(new LedgerTransaction(type, description));
+        LedgerTransaction transaction = transactions.save(
+                new LedgerTransaction(type, description, idempotencyKey, requestHash));
         List<Entry> saved = postings.stream()
                 .map(p -> new Entry(transaction.getId(), p.accountId(), p.amount(), transaction.getCreatedAt()))
                 .map(entries::save)

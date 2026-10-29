@@ -4,6 +4,7 @@ import dev.frenkli.ledger.domain.LedgerTransaction;
 import dev.frenkli.ledger.domain.TransactionType;
 import dev.frenkli.ledger.service.RecordedTransaction;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,8 +21,11 @@ public record TransactionResponse(
 
     static TransactionResponse from(RecordedTransaction recorded) {
         LedgerTransaction t = recorded.transaction();
+        // Sorted (money out first), so a replay read back from the database lists the entries in
+        // the same order as the original response.
         List<EntryResponse> entries = recorded.entries().stream()
                 .map(e -> new EntryResponse(e.getAccountId(), e.getAmount()))
+                .sorted(Comparator.comparingLong(EntryResponse::amount).thenComparing(EntryResponse::accountId))
                 .toList();
         return new TransactionResponse(t.getId(), t.getType(), t.getDescription(), t.getCreatedAt(), entries);
     }

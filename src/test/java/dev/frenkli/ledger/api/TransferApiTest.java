@@ -18,7 +18,7 @@ class TransferApiTest extends AbstractApiTest {
         UUID bob = createAccount("Bob");
         deposit(alice, 10_000);
 
-        ResponseEntity<TransactionResponse> response = rest.postForEntity("/transfers",
+        ResponseEntity<TransactionResponse> response = postWithNewKey("/transfers",
                 transfer(alice, bob, 2_500, "EUR"), TransactionResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -38,7 +38,7 @@ class TransferApiTest extends AbstractApiTest {
         UUID bob = createAccount("Bob");
         deposit(alice, 1_000);
 
-        ResponseEntity<String> response = rest.postForEntity("/transfers",
+        ResponseEntity<String> response = postWithNewKey("/transfers",
                 transfer(alice, bob, 1_000, "EUR"), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -51,7 +51,7 @@ class TransferApiTest extends AbstractApiTest {
         UUID bob = createAccount("Bob");
         deposit(alice, 1_000);
 
-        ResponseEntity<Map> response = rest.postForEntity("/transfers",
+        ResponseEntity<Map> response = postWithNewKey("/transfers",
                 transfer(alice, bob, 1_001, "EUR"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -65,7 +65,7 @@ class TransferApiTest extends AbstractApiTest {
         UUID alice = createAccount("Alice");
         deposit(alice, 1_000);
 
-        ResponseEntity<Map> response = rest.postForEntity("/transfers",
+        ResponseEntity<Map> response = postWithNewKey("/transfers",
                 transfer(alice, alice, 100, "EUR"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -79,7 +79,7 @@ class TransferApiTest extends AbstractApiTest {
         deposit(bob, 1_000);
 
         // A negative transfer from Alice to Bob would really pull money out of Bob's account.
-        ResponseEntity<Map> response = rest.postForEntity("/transfers",
+        ResponseEntity<Map> response = postWithNewKey("/transfers",
                 transfer(alice, bob, -500, "EUR"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -92,7 +92,7 @@ class TransferApiTest extends AbstractApiTest {
         UUID bob = createAccount("Bob");
         deposit(alice, 1_000);
 
-        ResponseEntity<Map> response = rest.postForEntity("/transfers",
+        ResponseEntity<Map> response = postWithNewKey("/transfers",
                 transfer(alice, bob, 100, "USD"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -103,7 +103,7 @@ class TransferApiTest extends AbstractApiTest {
         UUID alice = createAccount("Alice");
         deposit(alice, 1_000);
 
-        ResponseEntity<Map> response = rest.postForEntity("/transfers",
+        ResponseEntity<Map> response = postWithNewKey("/transfers",
                 transfer(alice, UUID.randomUUID(), 100, "EUR"), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);

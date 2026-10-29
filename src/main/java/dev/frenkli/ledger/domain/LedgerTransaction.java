@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
@@ -47,10 +48,14 @@ public class LedgerTransaction {
         // for JPA
     }
 
-    public LedgerTransaction(TransactionType type, String description) {
+    public LedgerTransaction(TransactionType type, String description, String idempotencyKey, String requestHash) {
         this.type = type;
         this.description = description;
-        this.createdAt = Instant.now();
+        this.idempotencyKey = idempotencyKey;
+        this.requestHash = requestHash;
+        // Postgres stores microseconds. Truncating here means the value we return now is exactly
+        // the value a replay will later read back from the database.
+        this.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
     }
 
     public UUID getId() {
@@ -63,6 +68,14 @@ public class LedgerTransaction {
 
     public String getDescription() {
         return description;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public String getRequestHash() {
+        return requestHash;
     }
 
     public Instant getCreatedAt() {

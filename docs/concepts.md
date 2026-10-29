@@ -295,3 +295,84 @@ money arrived, and that the whole ledger still sums to 0.
 **Without all this.** Customers could spend the same money twice by sending requests in parallel
 (a classic attack on payment systems), and payments would randomly fail with deadlocks under
 load.
+
+## Milestone 4: Idempotency
+
+### Why a payment API must be safe to retry
+
+**Problem.** A client sends "transfer €25 to Bob", and the connection drops before the response
+arrives. Did the transfer happen? The client cannot know. If it does not retry, Bob may never
+get paid. If it retries blindly, Bob may get paid twice. Networks fail like this all the time,
+and mobile apps and payment providers retry automatically.
+
+**How the code solves it.** Every `POST /deposits` and `POST /transfers` must carry an
+`Idempotency-Key` header: a unique id the *client* picks for this one operation (usually a
+UUID) and sends again, unchanged, on every retry. The server stores the key with the
+transaction (`transactions.idempotency_key`, `UNIQUE`) and handles a repeated key like this
+(`IdempotencyService.findPrevious`):
+
+| situation | response |
+|---|---|
+| key never seen | do the work normally, store the key with the transaction |
+| same key, same request | return the original response (`201`, same body), book nothing |
+| same key, different request | `422 idempotency-key-reused`: the client has a bug |
+| no key | `400` |
+
+A replayed response carries the header `Idempotent-Replayed: true`, so a client can tell. The
+body is identical to the first one, so the client cannot tell otherwise and does not need to.
+
+"Idempotent" is a maths word: doing it once or many times has the same effect.
+
+### Recognising "the same request": the request hash
+
+**Problem.** If a client reuses a key for a *different* transfer (another amount, another
+recipient), silently returning the old result would hide a real payment the client wanted.
+
+**How the code solves it.** `RequestFingerprint` computes a SHA-256 hash of the request's
+fields (operation, accounts, amount, currency, description), stored in
+`transactions.request_hash`. A repeated key is a replay only if the hash matches. The hash is
+built from the parsed fields, not the raw JSON, so the same request with fields in another
+order or with extra spaces is still recognised. Each field is length-prefixed, so values that
+contain the separator cannot make two different requests look alike
+(`RequestFingerprintTest`).
+
+### A replay must not re-check the business rules
+
+The idempotency check runs *before* any business check. Example: Alice transfers her whole
+balance, the response is lost, and the client retries. A fresh check would now say
+"insufficient funds", but this is not a new transfer: it is the retry of one that succeeded. The
+client must get the original success back
+(`IdempotencyApiTest.replayReturnsTheOriginalResultEvenIfTheBalanceHasChangedSince`).
+
+Requests that were *rejected* (e.g. `422 insufficient-funds`) are not stored: their database
+transaction rolled back. Retrying them simply tries again, which is what a client expects once
+the problem is fixed (`rejectedRequestIsNotStoredSoTheSameKeyCanSucceedLater`).
+
+### Parallel duplicates: locking the key itself
+
+**Problem.** An impatient client sends the same request twice at the same moment. Both arrive,
+both look up the key, neither finds it (neither has committed yet), and both try to book.
+The `UNIQUE` constraint stops the second booking, but that request then fails with a `500`
+instead of returning the result.
+
+**How the code solves it.** Before looking the key up, `IdempotencyKeyLocks.lock` takes a
+Postgres *advisory lock* on a hash of the key: `pg_advisory_xact_lock(hashtextextended(key, 0))`.
+An advisory lock is a lock on a number the application chooses, not on a table row (there is no
+row for the key yet). It is released automatically at commit or rollback. The second request
+waits there, then finds the committed transaction and returns it as a replay.
+`IdempotencyApiTest` fires 20 identical requests at once and checks exactly one booking, 20
+identical `201` responses, and only one of them not marked as a replay. Without the advisory
+lock this test fails with `duplicate key` errors.
+
+The key lock is always taken before the account locks of Milestone 3, so the locking order stays
+consistent and cannot deadlock.
+
+### Old rows and `NOT VALID`
+
+`V4__require_idempotency_key.sql` makes key and hash mandatory for new transactions. Rows from
+before this milestone have neither, and append-only rows cannot be filled in afterwards. The
+constraint is therefore added `NOT VALID`: Postgres enforces it for every new row but does not
+check the existing ones.
+
+**Without all this.** Every network glitch could turn into a double payment, which is exactly
+the kind of error that makes customers lose trust in a bank.
