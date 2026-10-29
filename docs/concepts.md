@@ -150,3 +150,75 @@ field, not JSON) gets `400 Bad Request`. Both use the RFC 7807 Problem Details f
 (`ApiExceptionHandler`), with a `type` such as `urn:problem:ledger:insufficient-funds` that a
 client can act on. Amounts must be positive because the direction of money is set by `from` and
 `to`: a negative transfer would quietly pull money out of the recipient.
+
+## Milestone 2: Balances and statements
+
+### A cached balance that can never drift
+
+**Problem.** An account's true balance is the sum of all its entries. That is correct, but an
+account with ten years of history has thousands of entries, and the bank needs its balance on
+every transfer. Banks therefore keep a running balance next to the history. The danger: the
+two can drift apart, and then the bank does not know how much money a customer has.
+
+**How the code solves it.** `accounts.balance` is a *cache* of `SUM(entries.amount)`:
+
+- Only `LedgerService.record` changes it, right after writing the entries, inside the same DB
+  transaction (`Propagation.MANDATORY`). If anything fails, the entries and the balance changes
+  roll back together, so they cannot disagree.
+- The update is one SQL statement, `balance = balance + :amount`
+  (`AccountRepository.addToBalance`). Postgres adds to the *latest* value. Reading the balance
+  into Java, adding, and writing it back would let two simultaneous bookings overwrite each
+  other ("lost update").
+- Each `UPDATE` locks the account row until commit. Updates always happen in the same order (by
+  account id), so two transactions never wait on each other in a circle (A waits for B while B
+  waits for A, a deadlock).
+- `V2__backfill_cached_balance.sql` filled in the cache once for entries written before this
+  milestone.
+
+`CachedBalanceTest` runs 200 random deposits and transfers, including ones that fail, and then
+checks cache == sum for every account.
+
+**Without it.** Either every balance read scans the full history (slow), or a cache that is
+updated separately silently drifts after the first crash or bug.
+
+### Reconciliation: `/ledger/health`
+
+**Problem.** Rules in code can still be broken by a bug, a manual SQL fix, or a bad migration.
+Banks reconcile: they regularly check, independently of the code that wrote the data, that the
+books balance.
+
+**How the code solves it.** `GET /ledger/health` (`LedgerHealthService`, `LedgerHealthQueries`)
+checks two invariants straight in SQL:
+
+1. The sum of *all* entries is 0. Money only moves; it is never created or destroyed.
+2. No account's cached balance differs from the sum of its entries. Any that do are listed.
+
+Both queries run in one `REPEATABLE_READ` transaction, so they see the same snapshot. Under the
+default `READ_COMMITTED`, a transfer committing between the two queries could make a healthy
+ledger look broken. The total is returned as a `BigDecimal` (Postgres sums `BIGINT` as
+`NUMERIC`), so even a broken ledger cannot overflow the check itself.
+
+`LedgerHealthApiTest` corrupts one cached balance on purpose and checks that it is reported.
+
+**Without it.** A broken ledger would be noticed only when a customer complains.
+
+### Statements and stable paging
+
+**Problem.** A statement is the account's history, newest first, delivered a page at a time.
+Paging needs a *stable* order: if two rows tie on the sort key, the database may return them in
+a different order for each query, and a line can appear on two pages, or on none.
+
+**How the code solves it.** `GET /accounts/{id}/entries?page=&size=` (`EntryRepository
+.findStatement`) sorts by `created_at DESC, id DESC`. Both entries of one transaction share a
+timestamp, so the unique entry id breaks the tie. Each line includes the transaction's type and
+description, so a customer can see what it was. `size` is limited to 1–100 so one request cannot
+load a whole history.
+
+**Without it.** Missing or duplicated lines on a statement, which a customer would rightly
+treat as an error in their account.
+
+### A note on the system account
+
+Every deposit now also updates `EXTERNAL_FUNDING`'s cached balance, so all deposits briefly lock
+that same row and run one after another. That is fine at this scale. Real banks avoid such a
+"hot" account, for example by splitting it into several sub-accounts or updating it in batches.

@@ -12,8 +12,8 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 |---|---|
 | 0. Setup: Spring Boot skeleton, Postgres, Flyway, Testcontainers, CI | done |
 | 1. Accounts + double-entry core | done |
-| 2. Balances & statements | next |
-| 3. Overdraft protection under concurrency | |
+| 2. Balances & statements | done |
+| 3. Overdraft protection under concurrency | next |
 | 4. Idempotency | |
 | 5. Reversals | |
 
@@ -25,6 +25,10 @@ The banking concepts behind each milestone are explained in [`docs/concepts.md`]
 - Money enters through a system account (`EXTERNAL_FUNDING`), so the whole ledger sums to 0
 - One database transaction per money movement: all entries are written, or none
 - Append-only history: the database rejects updates and deletes of entries and transactions
+- A cached balance per account that always equals the sum of its entries: updated in the same
+  database transaction, with an atomic `balance = balance + x`, in a fixed lock order
+- Reconciliation: `/ledger/health` checks that all entries sum to 0 and every cache matches
+- Account statements with stable paging (newest first, unique tie-breaker)
 - RFC 7807 Problem Details errors: `404` unknown account, `422` broken business rule
 - Schema changes as versioned, reviewed SQL migrations (Flyway), never Hibernate `ddl-auto`
 - Integration tests against a real PostgreSQL 16 (Testcontainers), not an in-memory imitation
@@ -133,6 +137,26 @@ Get an account and its balance:
 
 ```bash
 curl -s localhost:8080/accounts/<alice-id>
+```
+
+Get the statement, newest first (`page` starts at 0, `size` is 1–100, default 20):
+
+```bash
+curl -s 'localhost:8080/accounts/<alice-id>/entries?page=0&size=20'
+```
+
+```json
+{"accountId":"<alice-id>","entries":[{"entryId":"…","transactionId":"…","transactionType":"TRANSFER","description":"Rent","amount":-2500,"createdAt":"…"},{"entryId":"…","transactionId":"…","transactionType":"DEPOSIT","description":"Salary","amount":10000,"createdAt":"…"}],"page":0,"size":20,"totalEntries":2,"totalPages":1}
+```
+
+Check that the books balance:
+
+```bash
+curl -s localhost:8080/ledger/health
+```
+
+```json
+{"healthy":true,"sumOfAllEntries":0,"balanceMismatches":[]}
 ```
 
 A transfer larger than the balance is refused with `422`:

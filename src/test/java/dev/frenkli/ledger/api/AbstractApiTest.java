@@ -36,8 +36,21 @@ abstract class AbstractApiTest extends AbstractIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     }
 
+    void transfer(UUID from, UUID to, long amount) {
+        ResponseEntity<String> response = rest.postForEntity("/transfers",
+                Map.of("fromAccountId", from, "toAccountId", to, "amount", amount, "currency", "EUR"), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+    }
+
+    /** The cached balance, as the API returns it. */
     long balanceOf(UUID accountId) {
         return rest.getForObject("/accounts/" + accountId, AccountResponse.class).balance();
+    }
+
+    /** The balance computed from the full history: SUM(entries.amount). */
+    long entriesSumOf(UUID accountId) {
+        return jdbc.queryForObject("SELECT coalesce(sum(amount), 0) FROM entries WHERE account_id = ?",
+                Long.class, accountId);
     }
 
     /** The sum of every entry in the whole ledger. Must always be exactly 0. */

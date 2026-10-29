@@ -34,8 +34,9 @@ public class Account {
     private String currency;
 
     /**
-     * Cached balance in minor units. Not maintained yet (Milestone 2); the source of truth is
-     * always SUM(entries.amount) for this account.
+     * Cached balance in minor units: always equal to SUM(entries.amount) for this account, so the
+     * balance can be read without adding up the whole history. Only changed by
+     * {@code AccountRepository.addToBalance}, in the same DB transaction that writes the entries.
      */
     @Column(nullable = false)
     private long balance;
@@ -76,6 +77,10 @@ public class Account {
 
     public String getCurrency() {
         return currency;
+    }
+
+    public long getBalance() {
+        return balance;
     }
 
     public AccountStatus getStatus() {

@@ -122,9 +122,11 @@ class LedgerDatabaseRulesTest extends AbstractIntegrationTest {
         jdbc.update("INSERT INTO transactions (id, type, created_at) VALUES (?, 'DEPOSIT', now())", id);
     }
 
+    /** Like the application does: write the entry and update the cached balance together. */
     private void insertEntry(UUID transactionId, UUID accountId, long amount) {
         jdbc.update("INSERT INTO entries (id, transaction_id, account_id, amount, created_at) "
                 + "VALUES (?, ?, ?, ?, now())", UUID.randomUUID(), transactionId, accountId, amount);
+        jdbc.update("UPDATE accounts SET balance = balance + ? WHERE id = ?", amount, accountId);
     }
 
     private boolean transactionExists(UUID id) {

@@ -3,7 +3,6 @@ package dev.frenkli.ledger.api;
 import dev.frenkli.ledger.domain.Account;
 import dev.frenkli.ledger.domain.AccountStatus;
 import dev.frenkli.ledger.domain.AccountType;
-import dev.frenkli.ledger.service.AccountWithBalance;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -17,9 +16,8 @@ public record AccountResponse(
         AccountStatus status,
         Instant createdAt) {
 
-    static AccountResponse from(AccountWithBalance accountWithBalance) {
-        Account a = accountWithBalance.account();
+    static AccountResponse from(Account a) {
         return new AccountResponse(a.getId(), a.getOwnerName(), a.getType(), a.getCurrency(),
-                accountWithBalance.balance(), a.getStatus(), a.getCreatedAt());
+                a.getBalance(), a.getStatus(), a.getCreatedAt());
     }
 }

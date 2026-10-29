@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 
 import dev.frenkli.ledger.domain.Account;
 import dev.frenkli.ledger.repository.AccountRepository;
-import dev.frenkli.ledger.repository.EntryRepository;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -20,9 +19,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 class MoneyMovementServiceTest {
 
     private final AccountRepository accounts = mock(AccountRepository.class);
-    private final EntryRepository entries = mock(EntryRepository.class);
     private final LedgerService ledger = mock(LedgerService.class);
-    private final MoneyMovementService service = new MoneyMovementService(accounts, entries, ledger);
+    private final MoneyMovementService service = new MoneyMovementService(accounts, ledger);
 
     private final UUID from = UUID.randomUUID();
     private final UUID to = UUID.randomUUID();
@@ -60,9 +58,9 @@ class MoneyMovementServiceTest {
 
     @Test
     void transferRejectsInsufficientFunds() {
+        // A newly opened account has a balance of 0.
         when(accounts.findById(from)).thenReturn(Optional.of(Account.openCustomerAccount("A", "EUR")));
         when(accounts.findById(to)).thenReturn(Optional.of(Account.openCustomerAccount("B", "EUR")));
-        when(entries.sumAmountByAccountId(any())).thenReturn(99L);
 
         assertRuleBroken(() -> service.transfer(from, to, 100, "EUR", null), BusinessRule.INSUFFICIENT_FUNDS);
     }
