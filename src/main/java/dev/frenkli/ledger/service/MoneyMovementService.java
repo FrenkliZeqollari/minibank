@@ -7,7 +7,6 @@ import dev.frenkli.ledger.domain.Posting;
 import dev.frenkli.ledger.domain.SystemAccounts;
 import dev.frenkli.ledger.domain.TransactionType;
 import dev.frenkli.ledger.repository.AccountRepository;
-import dev.frenkli.ledger.repository.EntryRepository;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -18,12 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class MoneyMovementService {
 
     private final AccountRepository accounts;
-    private final EntryRepository entries;
     private final LedgerService ledger;
 
-    public MoneyMovementService(AccountRepository accounts, EntryRepository entries, LedgerService ledger) {
+    public MoneyMovementService(AccountRepository accounts, LedgerService ledger) {
         this.accounts = accounts;
-        this.entries = entries;
         this.ledger = ledger;
     }
 
@@ -60,7 +57,7 @@ public class MoneyMovementService {
 
         // No overdrafts for customer accounts. NOTE: not yet safe when two transfers from the
         // same account run at the same time; Milestone 3 adds row locking for that.
-        long balance = entries.sumAmountByAccountId(from.getId());
+        long balance = from.getBalance();
         if (balance < amount) {
             throw new BusinessRuleException(BusinessRule.INSUFFICIENT_FUNDS,
                     "Account " + from.getId() + " has " + balance + " cents, transfer needs " + amount);

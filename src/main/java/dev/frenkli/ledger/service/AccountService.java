@@ -2,7 +2,6 @@ package dev.frenkli.ledger.service;
 
 import dev.frenkli.ledger.domain.Account;
 import dev.frenkli.ledger.repository.AccountRepository;
-import dev.frenkli.ledger.repository.EntryRepository;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,25 +10,21 @@ import org.springframework.transaction.annotation.Transactional;
 public class AccountService {
 
     private final AccountRepository accounts;
-    private final EntryRepository entries;
 
-    public AccountService(AccountRepository accounts, EntryRepository entries) {
+    public AccountService(AccountRepository accounts) {
         this.accounts = accounts;
-        this.entries = entries;
     }
 
     @Transactional
-    public AccountWithBalance open(String ownerName, String currency) {
+    public Account open(String ownerName, String currency) {
         Currencies.requireSupported(currency);
-        Account account = accounts.save(Account.openCustomerAccount(ownerName, currency));
-        return new AccountWithBalance(account, 0);
+        return accounts.save(Account.openCustomerAccount(ownerName, currency));
     }
 
+    /** The account with its cached balance, which always equals SUM(entries.amount). */
     @Transactional(readOnly = true)
-    public AccountWithBalance get(UUID accountId) {
-        Account account = accounts.findById(accountId)
+    public Account get(UUID accountId) {
+        return accounts.findById(accountId)
                 .orElseThrow(() -> new AccountNotFoundException(accountId));
-        // Balance = SUM(entries.amount). Milestone 2 adds a cached balance column for speed.
-        return new AccountWithBalance(account, entries.sumAmountByAccountId(accountId));
     }
 }
