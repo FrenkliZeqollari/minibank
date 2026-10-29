@@ -1,13 +1,27 @@
 package dev.frenkli.ledger.repository;
 
 import dev.frenkli.ledger.domain.Account;
+import jakarta.persistence.LockModeType;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface AccountRepository extends JpaRepository<Account, UUID> {
+
+    /**
+     * Loads the account and locks its row until the DB transaction ends ({@code SELECT ... FOR
+     * UPDATE}; on Postgres Hibernate uses the {@code FOR NO KEY UPDATE} variant, which blocks
+     * other writers of the row but not the inserts of entries that reference it). Another
+     * transaction locking the same account waits here until this one commits, and then reads the
+     * balance as it is after that commit.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from Account a where a.id = :id")
+    Optional<Account> findByIdForUpdate(@Param("id") UUID id);
 
     /**
      * Adds a signed amount to the cached balance. Done as one SQL UPDATE ({@code balance = balance

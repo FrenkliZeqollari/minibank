@@ -49,7 +49,7 @@ class MoneyMovementServiceTest {
 
     @Test
     void transferRejectsUnknownAccount() {
-        when(accounts.findById(any())).thenReturn(Optional.empty());
+        when(accounts.findByIdForUpdate(any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.transfer(from, to, 100, "EUR", null))
                 .isInstanceOf(AccountNotFoundException.class);
@@ -59,8 +59,8 @@ class MoneyMovementServiceTest {
     @Test
     void transferRejectsInsufficientFunds() {
         // A newly opened account has a balance of 0.
-        when(accounts.findById(from)).thenReturn(Optional.of(Account.openCustomerAccount("A", "EUR")));
-        when(accounts.findById(to)).thenReturn(Optional.of(Account.openCustomerAccount("B", "EUR")));
+        when(accounts.findByIdForUpdate(from)).thenReturn(Optional.of(Account.openCustomerAccount("A", "EUR")));
+        when(accounts.findByIdForUpdate(to)).thenReturn(Optional.of(Account.openCustomerAccount("B", "EUR")));
 
         assertRuleBroken(() -> service.transfer(from, to, 100, "EUR", null), BusinessRule.INSUFFICIENT_FUNDS);
     }

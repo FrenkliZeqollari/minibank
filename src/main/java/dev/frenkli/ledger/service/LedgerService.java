@@ -46,7 +46,8 @@ public class LedgerService {
 
         // Each UPDATE locks its account row until commit. Updating in the same order (by account
         // id) in every transaction means two transactions never wait for each other in a circle
-        // (A then B vs. B then A), which would be a deadlock.
+        // (A then B vs. B then A), which would be a deadlock. Same order as
+        // MoneyMovementService.lockInIdOrder, which normally already holds these locks.
         postings.stream()
                 .sorted(Comparator.comparing(Posting::accountId))
                 .forEach(p -> {
