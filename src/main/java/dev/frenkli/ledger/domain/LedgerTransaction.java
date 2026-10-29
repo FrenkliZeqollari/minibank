@@ -1,0 +1,71 @@
+package dev.frenkli.ledger.domain;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * One business event that moves money (a deposit, a transfer, ...). The money itself is in its
+ * {@link Entry entries}. Named LedgerTransaction to avoid confusion with database transactions.
+ *
+ * <p>Append-only: there are no setters, and the database rejects UPDATE and DELETE.
+ */
+@Entity
+@Table(name = "transactions")
+public class LedgerTransaction {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private TransactionType type;
+
+    private String description;
+
+    @Column(name = "idempotency_key", unique = true)
+    private String idempotencyKey;
+
+    @Column(name = "request_hash")
+    private String requestHash;
+
+    @Column(name = "reverses_transaction_id")
+    private UUID reversesTransactionId;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
+    protected LedgerTransaction() {
+        // for JPA
+    }
+
+    public LedgerTransaction(TransactionType type, String description) {
+        this.type = type;
+        this.description = description;
+        this.createdAt = Instant.now();
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public TransactionType getType() {
+        return type;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+}

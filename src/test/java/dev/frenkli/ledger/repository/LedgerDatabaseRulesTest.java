@@ -1,0 +1,137 @@
+package dev.frenkli.ledger.repository;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import dev.frenkli.ledger.AbstractIntegrationTest;
+import dev.frenkli.ledger.domain.SystemAccounts;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
+
+/**
+ * The database's own safety net, tested with raw SQL that bypasses the service layer: even buggy
+ * application code cannot commit an unbalanced transaction or rewrite history.
+ */
+class LedgerDatabaseRulesTest extends AbstractIntegrationTest {
+
+    @Autowired
+    JdbcTemplate jdbc;
+
+    @Autowired
+    TransactionTemplate tx;
+
+    @Test
+    void balancedTransactionCommits() {
+        UUID customer = insertCustomerAccount();
+        UUID transactionId = UUID.randomUUID();
+
+        tx.executeWithoutResult(status -> {
+            insertTransaction(transactionId);
+            insertEntry(transactionId, SystemAccounts.EXTERNAL_FUNDING_ID, -700);
+            insertEntry(transactionId, customer, 700);
+        });
+
+        assertThat(entryCount(transactionId)).isEqualTo(2);
+    }
+
+    @Test
+    void unbalancedTransactionIsRejectedAtCommitAndFullyRolledBack() {
+        UUID customer = insertCustomerAccount();
+        UUID transactionId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            insertTransaction(transactionId);
+            insertEntry(transactionId, SystemAccounts.EXTERNAL_FUNDING_ID, -700);
+            insertEntry(transactionId, customer, 699);
+        })).isInstanceOf(DataAccessException.class).hasMessageContaining("unbalanced");
+
+        assertThat(transactionExists(transactionId)).isFalse();
+        assertThat(entryCount(transactionId)).isZero();
+    }
+
+    @Test
+    void transactionWithASingleEntryIsRejected() {
+        UUID customer = insertCustomerAccount();
+        UUID transactionId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            insertTransaction(transactionId);
+            insertEntry(transactionId, customer, 700);
+        })).isInstanceOf(DataAccessException.class).hasMessageContaining("unbalanced");
+    }
+
+    @Test
+    void transactionWithoutEntriesIsRejected() {
+        UUID transactionId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> insertTransaction(transactionId)))
+                .isInstanceOf(DataAccessException.class).hasMessageContaining("unbalanced");
+    }
+
+    @Test
+    void entriesCannotBeUpdatedOrDeleted() {
+        UUID customer = insertCustomerAccount();
+        UUID transactionId = UUID.randomUUID();
+        tx.executeWithoutResult(status -> {
+            insertTransaction(transactionId);
+            insertEntry(transactionId, SystemAccounts.EXTERNAL_FUNDING_ID, -700);
+            insertEntry(transactionId, customer, 700);
+        });
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE entries SET amount = 1000000 WHERE account_id = ?", customer))
+                .hasMessageContaining("append-only");
+        assertThatThrownBy(() -> jdbc.update("DELETE FROM entries WHERE transaction_id = ?", transactionId))
+                .hasMessageContaining("append-only");
+        assertThatThrownBy(() -> jdbc.update("DELETE FROM transactions WHERE id = ?", transactionId))
+                .hasMessageContaining("append-only");
+        assertThatThrownBy(() -> jdbc.execute("TRUNCATE entries"))
+                .hasMessageContaining("append-only");
+    }
+
+    @Test
+    void zeroAmountEntryIsRejected() {
+        UUID customer = insertCustomerAccount();
+        UUID transactionId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            insertTransaction(transactionId);
+            insertEntry(transactionId, customer, 0);
+        })).isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
+    void externalFundingSystemAccountIsSeeded() {
+        String type = jdbc.queryForObject("SELECT type FROM accounts WHERE id = ? AND owner_name = 'EXTERNAL_FUNDING'",
+                String.class, SystemAccounts.EXTERNAL_FUNDING_ID);
+
+        assertThat(type).isEqualTo("SYSTEM");
+    }
+
+    private UUID insertCustomerAccount() {
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO accounts (id, owner_name, type, currency, balance, status, created_at) "
+                + "VALUES (?, 'Test', 'CUSTOMER', 'EUR', 0, 'ACTIVE', now())", id);
+        return id;
+    }
+
+    private void insertTransaction(UUID id) {
+        jdbc.update("INSERT INTO transactions (id, type, created_at) VALUES (?, 'DEPOSIT', now())", id);
+    }
+
+    private void insertEntry(UUID transactionId, UUID accountId, long amount) {
+        jdbc.update("INSERT INTO entries (id, transaction_id, account_id, amount, created_at) "
+                + "VALUES (?, ?, ?, ?, now())", UUID.randomUUID(), transactionId, accountId, amount);
+    }
+
+    private boolean transactionExists(UUID id) {
+        return jdbc.queryForObject("SELECT count(*) FROM transactions WHERE id = ?", Integer.class, id) > 0;
+    }
+
+    private int entryCount(UUID transactionId) {
+        return jdbc.queryForObject("SELECT count(*) FROM entries WHERE transaction_id = ?", Integer.class, transactionId);
+    }
+}
