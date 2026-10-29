@@ -483,3 +483,54 @@ is about money.
 The Swagger UI is handy during development. A real bank would usually not expose it on a public
 production server. It would publish the OpenAPI document to partners through a developer
 portal instead, and switch the UI off with `springdoc.swagger-ui.enabled=false`.
+
+## Milestone 6: A small frontend
+
+A plain HTML/CSS/JavaScript page served by the same Spring Boot application
+(`src/main/resources/static`), at http://localhost:8080/. There is no build step and no
+framework: the point is to show the banking rules from the *client's* side.
+
+### Money in the browser: still no floating point
+
+**Problem.** People type amounts as decimals: `19.99`, or `19,99` in Germany. JavaScript numbers
+are floating point, and `19.99 * 100` is `1998.9999999999998`. Rounding that down would send
+1998 cents, one cent too few.
+
+**How the code solves it.** `money.js` parses the typed text with a regular expression into
+"euros" and "cents" *strings* and combines them with integer arithmetic (`BigInt`), so the value
+never passes through a float. It accepts both `.` and `,` as the decimal separator, rejects more
+than two decimals instead of rounding silently, and rejects zero and negative amounts.
+`formatCents` goes the other way with `%` and integer division only. `src/test/js/money.test.js`
+covers the cases, including `19.99`. CI runs it with Node's built-in test runner.
+
+### The client's side of idempotency
+
+**Problem.** Milestone 4 made the server safe to retry, but only if the client *reuses the same
+key* when it retries, and uses a *new* key for a new operation.
+
+**How the code solves it.** `MoneyOperation` (`api.js`) owns the key for one intended operation:
+
+| what happens | the key |
+|---|---|
+| first submit | a new random key (`crypto.randomUUID()`) is created |
+| network error (no answer at all) | **kept**: the request may or may not have arrived, so submitting again sends the same key, and the server books it at most once |
+| any answer from the server (`201`, `422`, …) | dropped: the outcome is known |
+| the user edits the form | dropped: it is now a different operation |
+
+The page tells the user that retrying after a network error is safe. A browser test confirmed
+it: when the first transfer attempt is cut off at the network level, the second attempt carries
+the same `Idempotency-Key` and the transfer is booked exactly once.
+
+### Showing what the server says
+
+Errors are RFC 7807 Problem Details, so the page can show the server's own `title` and
+`detail` ("Insufficient funds: Account … has 7450 cents, transfer needs 50000") without knowing
+every rule itself. Business rules live in one place, the server. The page only checks what it
+must (is the amount a number?) to give quick feedback.
+
+### No "list all accounts" endpoint
+
+The page remembers the accounts opened or added in *this browser* (`localStorage`). It does not
+ask the server for "all accounts", because there is no such endpoint, on purpose: a real bank
+would only show you *your* accounts, after login. Login and authorization are out of scope for
+this project.

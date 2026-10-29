@@ -8,7 +8,10 @@
       "installMaven": "true",
       "installGradle": "false"
     },
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    }
   },
 
   "customizations": {
@@ -22,5 +25,5 @@
 
   "forwardPorts": [8080],
 
-  "postCreateCommand": "java -version && mvn -v && docker --version"
+  "postCreateCommand": "java -version && mvn -v && docker --version && node --version"
 }
