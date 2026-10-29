@@ -141,8 +141,10 @@ With the app running:
 
 Amounts are integers in cents: `10000` is €100.00. Only `EUR` is supported for now.
 
-`POST /deposits` and `POST /transfers` require an `Idempotency-Key` header: a unique id you pick
-for the operation (e.g. `uuidgen`) and send again unchanged if you retry it.
+Every money-moving request requires an `Idempotency-Key` header: `POST /deposits`,
+`POST /transfers`, `POST /transactions/{id}/reversal` and `POST /accounts/{id}/trades`. It is a
+unique id you pick for the operation (e.g. `uuidgen`) and send again unchanged if you retry it.
+Without it the request is refused with `400`.
 
 Open an account:
 
@@ -241,8 +243,9 @@ curl -s -X POST localhost:8080/instruments/ACME/prices -H 'Content-Type: applica
   -d '{"price": 1234}'
 ```
 
-For an account `<investor-id>` with €1,000.00 deposited, buy 10 shares at the current price. Like every money movement this needs an `Idempotency-Key`;
-the cash side is a `TRADE` transaction against the `SECURITIES_SETTLEMENT` system account:
+For an account `<investor-id>` with €1,000.00 deposited, buy 10 shares at the current price.
+Like every money movement this needs an `Idempotency-Key`; the cash side is a `TRADE`
+transaction against the `SECURITIES_SETTLEMENT` system account:
 
 ```bash
 curl -s -X POST localhost:8080/accounts/<investor-id>/trades -H 'Content-Type: application/json' \
